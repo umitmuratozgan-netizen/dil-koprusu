@@ -1,0 +1,22 @@
+{
+  "name": "Dil Köprüsü — Felemenkçe öğren, tercüman, Belçika yardımcısı",
+  "short_name": "Dil Köprüsü",
+  "description": "Felemenkçe (Flaman) dersleri, sesli tercüman, konuşma pratiği ve Belçika'da yeni hayat yardımcısı",
+  "lang": "tr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f6f3",
+  "theme_color": "#0f766e",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ],
+  "shortcuts": [
+    { "name": "Tercüman", "short_name": "Tercüman", "url": "./?tab=ceviri", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "Bugünün dersi", "short_name": "Ders", "url": "./?tab=ogren", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "Mektup oku", "short_name": "Mektup", "url": "./?tab=yardim", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] }
+  ]
+}
