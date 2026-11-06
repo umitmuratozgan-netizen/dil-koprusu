@@ -232,6 +232,56 @@ const Speech = {
   }
 };
 
+/* ---------------- Canlı altyazı: sürekli dinleme ----------------
+   Kesinleşen her cümle onFinal ile ayrı gelir. Tarayıcı oturumu kendiliğinden kapatırsa durdurulana kadar yeniden başlatır.
+   Android'de continuous modda sonuçlar birikerek tekrar gelebiliyor: önceki kesin metinle başlıyorsa yalnız yeni kısmı al. */
+Speech.live = function ({ lang, onInterim = () => { }, onFinal = () => { }, onEnd = () => { }, onError = () => { }, maxMs = 30 * 60000 }) {
+  if (!SR_CLASS) { onError("nosupport"); return null; }
+  if (this.cur) this.cur.cancel();
+  TTS.stop();
+  let rec = null, ended = false, lastFinal = "", restartTimer = null, netFails = 0;
+  const cap = setTimeout(() => h.stop(), maxMs);
+  const cleanup = () => { clearTimeout(cap); clearTimeout(restartTimer); if (Speech.cur === h) Speech.cur = null; };
+  const run = () => {
+    rec = new SR_CLASS();
+    rec.lang = lang; rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
+    lastFinal = "";
+    rec.onresult = e => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i]; const t = r[0].transcript.trim();
+        if (r.isFinal) {
+          let d = t;
+          if (lastFinal && t.toLowerCase().startsWith(lastFinal.toLowerCase())) d = t.slice(lastFinal.length).trim();
+          lastFinal = t;
+          if (d) { netFails = 0; onFinal(d); }
+        } else interim += t + " ";
+      }
+      onInterim(interim.trim());
+    };
+    rec.onerror = e => {
+      if (e.error === "no-speech" || e.error === "aborted") return;
+      if (e.error === "network") { netFails++; return; }
+      if (!ended) { ended = true; cleanup(); onError(e.error); }
+    };
+    rec.onend = () => {
+      if (ended) return;
+      if (netFails > 5) { ended = true; cleanup(); onError("network"); return; }
+      restartTimer = setTimeout(() => { if (!ended) { try { run(); } catch { ended = true; cleanup(); onError("start"); } } }, 250);
+    };
+    try { rec.start(); } catch { ended = true; cleanup(); onError("start"); }
+  };
+  const h = {
+    owner: "live",
+    get active() { return !ended; },
+    stop() { if (ended) return; ended = true; cleanup(); try { rec && rec.stop(); } catch { } onEnd(); }, // stop: son cümle yine onFinal ile gelebilir
+    cancel() { if (ended) return; ended = true; cleanup(); try { rec && rec.abort(); } catch { } onError("cancelled"); }
+  };
+  this.cur = h;
+  run();
+  return h;
+};
+
 /* ---------------- Ekran açık kalsın (tercüman ve müşteriye göster) ---------------- */
 const Wake = {
   lock: null, want: false,
@@ -473,6 +523,29 @@ Fields: tesvik_tr (2–3 warm, specific Turkish sentences), eksik_ifadeler (2–
 ${OKUNUS_RULES}`;
 }
 
+function sysLive(ctx) {
+  const name = profile().name;
+  return `You produce live Turkish captions for Dutch speech the user overhears around them (they are not necessarily being addressed). ${profileForAI()}
+Situation: ${CTX_LABEL[ctx] || CTX_LABEL.genel}.
+Input: the recent captions for context and the NEWEST automatic speech-recognition segment. Segments can be fragments, contain recognition errors, Flemish forms and workplace jargon.
+Fields:
+- tr: natural Turkish translation of the NEWEST segment only (short, like a subtitle). If it is only noise or filler ("eh", "ja ja"), return an empty string.
+- duzeltilmis_nl: the most likely intended Dutch for the newest segment (fix ASR errors only).
+- onemli: true ONLY if the segment is an instruction or task that could be meant for the user, mentions the user${name ? ` (name: ${name})` : ""}, mentions a time, shift, break or schedule change, is a safety warning, or is a question likely directed at the user.
+- not_tr: when onemli is true, a very short Turkish explanation (e.g. "Sana kasaya geçmeni söylüyor", "Molanın saati değişti"); otherwise empty.
+Never invent content that was not said.`;
+}
+function sysLiveSum() {
+  return `You summarise an overheard Dutch conversation for the user. ${profileForAI()}
+Input: the captions (Dutch with Turkish) of the conversation, in order.
+Fields:
+- ozet_tr: what the conversation was about, 3–6 short Turkish sentences, plain and concrete.
+- benimle_ilgili_tr: anything that concerns the user (tasks, their name, times, shift or rule changes, things they should ask about). Empty string if nothing. Mark uncertain points as uncertain; never invent.
+- sorulacak_nl: one short polite Dutch question the user could ask a colleague to confirm the most important point (empty if not needed); sorulacak_tr: its Turkish meaning; sorulacak_okunus: pronunciation.
+- kelimeler: 5–8 useful words or short phrases that actually occurred (work vocabulary first, with de/het for nouns): nl, tr, okunus.
+${OKUNUS_RULES}`;
+}
+
 /* ---------------- Şemalar ---------------- */
 const S = (props) => ({ type: "object", additionalProperties: false, required: Object.keys(props), properties: props });
 const STR = { type: "string" }, BOOL = { type: "boolean" };
@@ -491,7 +564,9 @@ const SCHEMA = {
   write: S({ konu_nl: STR, mesaj_nl: STR, geri_ceviri_tr: STR, aciklama_tr: STR, uyari_tr: STR }),
   phone: S({ acilis: ITEM, isim_harfleme: STR, sorular: { type: "array", items: S({ soru_nl: STR, soru_tr: STR, cevap_nl: STR, cevap_tr: STR, okunus: STR }) }, kapanis: ITEM, ipucu_tr: STR }),
   debrief: S({ tesvik_tr: STR, eksik_ifadeler: { type: "array", items: ITEM }, sonraki_tr: STR }),
-  ping: S({ cevap: STR })
+  ping: S({ cevap: STR }),
+  live: S({ tr: STR, duzeltilmis_nl: STR, onemli: BOOL, not_tr: STR }),
+  livesum: S({ ozet_tr: STR, benimle_ilgili_tr: STR, sorulacak_nl: STR, sorulacak_tr: STR, sorulacak_okunus: STR, kelimeler: { type: "array", items: ITEM } })
 };
 
 /* ---------------- Deneme modu (?demo): anahtarsız arayüz testi ---------------- */
@@ -521,7 +596,11 @@ function demoAnswer(kind, signal) {
       sorular: [{ soru_nl: "Wat is uw geboortedatum?", soru_tr: "Doğum tarihiniz nedir?", cevap_nl: "[dag] [maand] [jaar].", cevap_tr: "[gün] [ay] [yıl].", okunus: "[dah] [maant] [yaar]" }],
       kapanis: { nl: "Dank u wel, tot ziens.", tr: "Çok teşekkürler, hoşça kalın.", okunus: "dank ü vel, tot zins" }, ipucu_tr: "Kimlik kartın ve takvimin yanında olsun." },
     debrief: { tesvik_tr: "Harika! İlk kez fırında Felemenkçe sipariş vermek büyük adım.", eksik_ifadeler: [{ nl: "Mag ik een half grijs brood, gesneden?", tr: "Yarım kepekli ekmek, dilimlenmiş alabilir miyim?", okunus: "mah ik een half hreys broot, hısneedın" }], sonraki_tr: "Yarın aynı fırında 'Tot morgen!' de." },
-    ping: { cevap: "Hallo!" }
+    ping: { cevap: "Hallo!" },
+    live: { tr: "Elif, sen saat üçte kasa 2'ye geçebilir misin?", duzeltilmis_nl: "Elif, kan jij om drie uur naar kassa twee gaan?", onemli: true, not_tr: "Sana saat 15:00'te 2 numaralı kasaya geçmeni söylüyor." },
+    livesum: { ozet_tr: "Takım lideri bugünkü görev dağılımını anlattı. Saat üçte kasada bir kişi eksik olacak. Akşam yeni sevkiyat gelecek ve süt reyonu doldurulacak.", benimle_ilgili_tr: "Saat 15:00'te 2 numaralı kasaya geçmen isteniyor (emin olmak için sor).",
+      sorulacak_nl: "Moet ik om drie uur naar kassa twee?", sorulacak_tr: "Saat üçte kasa 2'ye mi geçmeliyim?", sorulacak_okunus: "mut ik om dri üür naar kasa twee",
+      kelimeler: [{ nl: "de levering", tr: "sevkiyat", okunus: "dı leevıring" }, { nl: "de zuivelafdeling", tr: "süt ürünleri reyonu", okunus: "dı zöyvılafdeeling" }] }
   };
   return new Promise((res, rej) => {
     const t = setTimeout(() => res(JSON.parse(JSON.stringify(data[kind] || {}))), 700);

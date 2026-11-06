@@ -516,11 +516,16 @@ let conv = store.get("conv", []);
 const thread = []; // bu oturumdaki baloncuklar (html) — sekme değişince kaybolmasın
 const redoMap = new Map();
 let bubSeq = 0;
+const modeChips = () => `<button class="chip" data-act="interpMode" data-m="talk" aria-pressed="${!App.interp.live}">💬 Konuşma</button><button class="chip" data-act="interpMode" data-m="live" aria-pressed="${!!App.interp.live}">🎧 Canlı altyazı</button>`;
 function renderInterp() {
+  const live = !!App.interp.live;
+  $("#micsRow").classList.toggle("hidden", live); $("#liveBtn").classList.toggle("hidden", !live);
+  $("#lifelines").innerHTML = C.LIFELINES.map(l => `<button class="chip" data-act="show" data-nl="${esc(l[0])}" data-tr="${esc(l[1])}" data-ok="${esc(l[2] || "")}" data-src="Hazır">${esc(l[0])}</button>`).join("");
+  if (live) return renderLive();
   const ctx = App.interp.ctx, serious = SERIOUS.has(ctx);
   const fast = store.get("fastInterp", false);
   $("#v-ceviri").innerHTML = `
-    <div class="ctxbar"><div class="chips" role="group" aria-label="Durum ve ayarlar">
+    <div class="ctxbar"><div class="chips" role="group" aria-label="Mod, durum ve ayarlar">${modeChips()}
       ${serious ? `<span class="chip" style="color:var(--danger)">🛡️ En iyi kalite</span>` : `<button class="chip" data-act="fastToggle" aria-pressed="${fast}" aria-label="Hızlı mod">⚡${fast ? " Hızlı" : ""}</button>`}
       ${CTXS.map(([k, l]) => `<button class="chip" data-act="ctx" data-k="${k}" aria-pressed="${k === ctx}">${l}</button>`).join("")}
       <button class="chip" data-act="typeOpen" aria-label="Yazarak çevir">⌨️ Yaz</button>
@@ -532,9 +537,104 @@ function renderInterp() {
       <textarea id="typeIn" placeholder="Felemenkçe ya da Türkçe yaz… (klavyedeki 🎤 ile de söyleyebilirsin)" style="margin-top:8px"></textarea>
       <div class="row" style="margin-top:8px"><button class="btn sm" data-act="typeIn" data-dir="in">🇧🇪 → 🇹🇷 Anlamı</button><button class="btn sm" data-act="typeIn" data-dir="out">🇹🇷 → 🇧🇪 Nasıl derim</button></div>
     </details>`;
-  $("#lifelines").innerHTML = C.LIFELINES.map(l => `<button class="chip" data-act="show" data-nl="${esc(l[0])}" data-tr="${esc(l[1])}" data-ok="${esc(l[2] || "")}" data-src="Hazır">${esc(l[0])}</button>`).join("");
   scrollThread();
 }
+
+/* ---------------- Canlı altyazı (yanında konuşulanı anlamak) ---------------- */
+const LIVE = { caps: [], queue: [], busy: false, h: null, sum: null, seq: 0 };
+const capHtml = c => `<div class="cap${c.hot ? " hot" : ""}" id="${c.id}">
+  ${c.tr ? `<div class="tr">${esc(c.tr)}</div>` : c.state === "wait" ? `<div class="skel" style="width:70%;height:18px"></div>` : c.state === "err" ? `<div class="small" style="color:var(--bad)">çevrilemedi</div>` : ""}
+  <div class="nl">🇧🇪 ${esc(c.nl)}</div>${c.why ? `<div class="why">🔔 ${esc(c.why)}</div>` : ""}</div>`;
+function renderLive() {
+  const ctx = App.interp.ctx; const lm = store.get("liveModel", null); const on = !!(LIVE.h && LIVE.h.active);
+  const logs = store.get("liveLogs", []);
+  $("#v-ceviri").innerHTML = `
+    <div class="ctxbar"><div class="chips" role="group" aria-label="Mod ve durum">${modeChips()}${CTXS.map(([k, l]) => `<button class="chip" data-act="ctx" data-k="${k}" aria-pressed="${k === ctx}">${l}</button>`).join("")}</div></div>
+    ${!LIVE.caps.length ? `<div class="card"><h2 style="margin-top:0">🎧 Canlı altyazı</h2>
+      <p style="margin:0 0 8px">Yanında konuşulan Felemenkçeyi dinler, her cümleyi Türkçe altyazı gibi gösterir. Sana bir iş söylendiğinde, adın geçtiğinde ya da saat/vardiya değiştiğinde satır <b style="color:var(--warn)">🔔 sarı</b> yanar.</p>
+      <p class="small muted" style="margin:0">Telefonu konuşanlara yakın tut. Ses kaydedilmez; yalnız yazıya dökülen cümleler çevrilir. İş arkadaşlarına “Ik leer Nederlands, mijn app helpt mij.” demek iyi olur. Bitince <b>Özetle</b> ile kısa özet ve yeni kelimeler alırsın.</p></div>` : ""}
+    <div class="card"><div class="small muted" style="margin-bottom:6px">Altyazı modeli ${lm ? "" : "<b style='color:var(--bad)'>— önce birini seç</b>"}</div>
+      <div class="chips" role="group" aria-label="Altyazı modeli">
+        <button class="chip" data-act="liveModel" data-m="fast" aria-pressed="${lm === "fast"}">⚡ Hızlı & ucuz (önerilen)</button>
+        <button class="chip" data-act="liveModel" data-m="best" aria-pressed="${lm === "best"}">🧠 En iyi (yavaş, pahalı)</button></div>
+      <div class="small muted">Her cümle ayrı çevrilir. Hızlı: ~1–2 sn, 10 dakikalık konuşma birkaç sent. En iyi: ~5–8 sn gecikme, 10 dakika ~1 $ civarı.</div></div>
+    <div id="caps" aria-live="polite">${LIVE.caps.map(capHtml).join("")}</div>
+    ${!on && LIVE.caps.length ? `<div class="grid2" style="margin-top:12px"><button class="btn primary" data-act="liveSum">📝 Özetle + kelimeler</button><button class="btn" data-act="liveClear">🧹 Temizle</button></div>` : ""}
+    <div id="liveSumOut" aria-live="polite">${LIVE.sum || ""}</div>
+    ${logs.length ? `<details class="card" style="margin-top:12px"><summary>🗂 Önceki dinlemeler (${logs.length})</summary>${logs.map(l => `<div class="phrase"><div class="t"><b style="font-size:.9rem">${esc(new Date(l.at).toLocaleString("tr-TR"))}</b><div class="small">${esc(l.ozet || "")}</div>
+      <details class="small"><summary>Döküm (${l.caps.length} cümle)</summary>${l.caps.map(c => `<div style="margin:4px 0">${esc(c.tr)}<br><span class="muted">${esc(c.nl)}</span></div>`).join("")}</details></div></div>`).join("")}</details>` : ""}`;
+  setLiveBtn(on);
+  scrollThread();
+}
+function setLiveBtn(on) {
+  const b = $("#liveBtn"); b.classList.toggle("live", on); b.setAttribute("aria-pressed", String(on));
+  b.querySelector(".lbl").textContent = on ? "⏹ Dinlemeyi durdur" : "Dinlemeye başla";
+  b.querySelector(".sub").innerHTML = on ? `<span class="waves" aria-hidden="true"><i></i><i></i><i></i><i></i></span> dinliyor — telefonu yakın tut` : "Yakındaki Felemenkçe konuşma → canlı Türkçe altyazı";
+}
+ACT.interpMode = el => { if (Speech.cur) Speech.cur.cancel(); App.interp.live = el.dataset.m === "live"; renderInterp(); window.scrollTo(0, 0); };
+ACT.liveModel = el => { store.set("liveModel", el.dataset.m); renderInterp(); };
+ACT.liveToggle = () => {
+  if (LIVE.h && LIVE.h.active) { LIVE.h.stop(); return; }
+  if (!store.get("liveModel", null)) { toast("Önce altyazı modelini seç"); window.scrollTo(0, 0); return; }
+  if (!store.get("apiKey", "") && !DEMO) { toast("Önce API anahtarını gir: Ben → 🔑"); return; }
+  LIVE.sum = null; haptic(20); Wake.on();
+  const lt = $("#liveText");
+  LIVE.h = Speech.live({ lang: store.get("srLang", "nl-BE"),
+    onInterim: t => { if (t) { lt.classList.remove("hidden"); lt.textContent = t; } },
+    onFinal: seg => { lt.classList.add("hidden"); addSeg(seg); },
+    onEnd: () => { lt.classList.add("hidden"); haptic(10); if (App.view === "ceviri" && App.interp.live) renderLive(); },
+    onError: c => { lt.classList.add("hidden"); setLiveBtn(false); if (c !== "cancelled") { toast(Speech.errorText(c)); if (App.view === "ceviri" && App.interp.live) renderLive(); } } });
+  renderLive();
+};
+function addSeg(seg) {
+  const c = { id: "c" + (++LIVE.seq), nl: seg, state: "wait" };
+  LIVE.caps.push(c); if (LIVE.caps.length > 300) LIVE.caps.shift();
+  const box = $("#caps"); if (box) { box.insertAdjacentHTML("beforeend", capHtml(c)); scrollThread(); }
+  LIVE.queue.push(c); pumpLive();
+}
+function updateCap(c) { const el = document.getElementById(c.id); if (el) el.outerHTML = capHtml(c); }
+async function pumpLive() {
+  if (LIVE.busy || !LIVE.queue.length) return;
+  LIVE.busy = true;
+  const c = LIVE.queue.shift();
+  if (LIVE.queue.length >= 2) { // geride kaldıysak bekleyen cümleleri birleştirip tek seferde çevir
+    const extra = LIVE.queue.splice(0);
+    c.nl = [c.nl, ...extra.map(x => x.nl)].join(" ");
+    extra.forEach(x => { const el = document.getElementById(x.id); if (el) el.remove(); });
+    LIVE.caps = LIVE.caps.filter(x => !extra.includes(x)); updateCap(c);
+  }
+  const ctx = App.interp.ctx;
+  const recent = LIVE.caps.filter(x => x.state === "ok" && x !== c).slice(-6).map(x => "- " + x.nl).join("\n") || "(start of conversation)";
+  try {
+    const r = await callClaude({ feature: "live:" + c.id, kind: "live", ctx, system: sysLive(ctx), schema: SCHEMA.live,
+      model: store.get("liveModel", "fast") === "fast" ? MODEL_FAST : MODEL_BEST, timeout: 30000, maxTokens: 4000,
+      content: `Recent captions:\n${recent}\n\nNEWEST segment: "${c.nl}"` });
+    c.tr = r.tr; if (r.duzeltilmis_nl) c.nl = r.duzeltilmis_nl; c.hot = !!r.onemli; c.why = r.not_tr; c.state = "ok";
+    if (c.hot) haptic([40, 60, 40]);
+  } catch (e) { c.state = "err"; if (e.code === "nokey") toast(e.message); }
+  updateCap(c); scrollThread();
+  LIVE.busy = false; pumpLive();
+}
+ACT.liveSum = async el => {
+  const lines = LIVE.caps.filter(c => c.nl).map(c => `NL: ${c.nl}${c.tr ? ` | TR: ${c.tr}` : ""}`);
+  if (!lines.length) return;
+  el.disabled = true; $("#liveSumOut").innerHTML = spinner("Özetleniyor…");
+  try {
+    const r = await callClaude({ feature: "livesum", kind: "livesum", system: sysLiveSum(), schema: SCHEMA.livesum, model: MODEL_BEST, timeout: 90000,
+      content: `Captions in order:\n${lines.join("\n")}` });
+    LIVE.sum = `<div class="card" style="margin-top:12px"><h3>📝 Özet</h3><p style="margin:0">${esc(r.ozet_tr)}</p>
+      ${r.benimle_ilgili_tr ? `<div class="warnbox" style="margin-top:10px">🔔 <b>Seninle ilgili:</b> ${esc(r.benimle_ilgili_tr)}</div>` : ""}
+      ${r.sorulacak_nl ? `<div class="reply"><span class="tag br">Emin olmak için sor</span><div class="mid-nl" style="margin-top:4px">${esc(r.sorulacak_nl)}</div><div class="okn small">${esc(r.sorulacak_okunus)}</div><div class="small">🇹🇷 ${esc(r.sorulacak_tr)}</div>${acts(r.sorulacak_nl, r.sorulacak_tr, r.sorulacak_okunus, "Canlı altyazı")}</div>` : ""}
+      ${r.kelimeler.length ? `<h3 style="margin-top:12px">📚 Bu konuşmadan kelimeler</h3>${r.kelimeler.map(w => `<div class="phrase"><button class="ibtn" data-act="say" data-say="${esc(w.nl)}" aria-label="Sesli oku">🔊</button><div class="t"><b>${esc(w.nl)}</b><div class="okn small">${esc(w.okunus)}</div><div class="small">🇹🇷 ${esc(w.tr)}</div></div><button class="ibtn" data-act="add" data-nl="${esc(w.nl)}" data-tr="${esc(w.tr)}" data-ok="${esc(w.okunus)}" data-src="Canlı altyazı" aria-label="Kartlarıma ekle">➕</button></div>`).join("")}` : ""}</div>`;
+    $("#liveSumOut").innerHTML = LIVE.sum;
+    const logs = store.get("liveLogs", []);
+    logs.unshift({ at: Date.now(), ozet: r.ozet_tr, caps: LIVE.caps.filter(c => c.tr).map(c => ({ nl: c.nl, tr: c.tr })) });
+    store.set("liveLogs", logs.slice(0, 10));
+    Progress.addXP(2);
+  } catch (e) { $("#liveSumOut").innerHTML = e.code === "abort" ? "" : errBox(e); }
+  el.disabled = false;
+};
+ACT.liveClear = () => { if (!confirm("Altyazılar temizlensin mi? (Özetlediysen 'Önceki dinlemeler'de durur)")) return; LIVE.caps = []; LIVE.queue = []; LIVE.sum = null; renderLive(); };
 function scrollThread() { const v = App.view; requestAnimationFrame(() => { if (App.view === v && (v === "ceviri" || v === "pratik")) window.scrollTo(0, document.body.scrollHeight); }); }
 ACT.ctx = el => { App.interp.ctx = el.dataset.k; store.set("ctx", el.dataset.k); renderInterp(); };
 ACT.fastToggle = () => { store.set("fastInterp", !store.get("fastInterp", false)); renderInterp(); };

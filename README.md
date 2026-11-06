@@ -5,7 +5,7 @@ Türkiye'den Belçika'ya (Flanders) taşınanlar için Felemenkçe öğrenme, se
 **Aç:** https://umitmuratozgan-netizen.github.io/dil-koprusu/
 
 - **Öğren:** A1 → B1 seviye yolu, günlük ders, kartlar, dikte, kelime dizilişi, dilbilgisi (Türkçe anlatım)
-- **Tercüman:** Felemenkçe dinle → Türkçe anlam + cevap önerileri; Türkçe söyle → Felemenkçe (okunuş + ses)
+- **Tercüman:** Felemenkçe dinle → Türkçe anlam + cevap önerileri; Türkçe söyle → Felemenkçe (okunuş + ses); **🎧 Canlı altyazı:** yanında konuşulanı satır satır Türkçeye çevirir, sana dair olanları 🔔 ile işaretler, sonunda özet + kelimeler
 - **Pratik:** gerçek hayat görevleri ve konuşma senaryoları
 - **Yardım:** mektup/bordro fotoğrafı açıklama, mesaj yazma, telefon hazırlığı, "İlk 12 ay" listesi
 
