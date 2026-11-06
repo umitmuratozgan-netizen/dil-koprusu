@@ -1015,7 +1015,10 @@ function renderBen() {
       <p class="small muted">Çeviri, pratik, öğretmen, belge okuma için gerekir; hazır dersler ve kartlar anahtarsız çalışır. Anahtar yalnız bu telefonda saklanır ve doğrudan Anthropic'e gider.
       <b>Bu uygulamaya özel bir anahtar oluştur ve aylık harcama limiti koy</b> (console.anthropic.com → Settings → Limits). Uygulamayı ana ekrana ekledikten sonra anahtarı orada bir kez daha girmen gerekebilir.</p>
       <input type="password" id="apiKey" value="${esc(store.get("apiKey", ""))}" placeholder="sk-ant-…" autocomplete="off" autocapitalize="off" spellcheck="false">
-      <div class="row" style="margin-top:8px"><button class="btn primary" data-act="saveKey">Kaydet ve dene</button><span class="small" id="keyStatus" aria-live="polite"></span></div></details>
+      <div class="row" style="margin-top:8px"><button class="btn" data-act="pasteKey" data-into="apiKey">📋 Yapıştır</button><button class="btn primary" data-act="saveKey">Kaydet ve dene</button><span class="small" id="keyStatus" aria-live="polite"></span></div>
+      <details style="margin-top:12px"><summary class="small">🔗 Başka bir telefona kurulum linki oluştur</summary>
+        <p class="small muted">Yukarıdaki anahtarla tek dokunuşluk bir link oluşur. Karşı taraf linke dokununca anahtar telefonuna kaydolur ve linkten silinir. Link anahtarın kendisi gibidir: yalnız o kişiye gönder, o da kurduktan sonra mesajı silsin.</p>
+        <button class="btn sm" data-act="makeSetupLink">🔗 Linki oluştur ve kopyala</button><div id="setupLinkOut" class="small" style="margin-top:6px;word-break:break-all"></div></details></details>
 
     <details class="card"><summary>⚙️ Ayarlar</summary>
       <label class="row small" style="margin-top:10px"><input type="checkbox" id="s_fast" ${store.get("fastInterp", false) ? "checked" : ""}> ⚡ Tercümanda hızlı mod (Claude Haiku: ~2 sn, çok ucuz). Doktor/resmî/okul/polis durumlarında her zaman en iyi model kullanılır.</label>
@@ -1128,7 +1131,7 @@ function renderOnb() {
      <p class="small">Çeviri, pratik ve belge okuma Claude yapay zekâsıyla çalışır. Bunun için şifre gibi bir <b>API anahtarı</b> gerekir (console.anthropic.com → API Keys). Aylık harcama limiti koymayı unutma.</p>
      <p class="small muted">Anahtar yoksa da olur: hazır dersler, kartlar, hazır cümleler ve İlk 12 ay listesi anahtarsız çalışır. Sonra Ben → Ayarlar'dan girebilirsin.</p>
      <input type="password" id="o_key" placeholder="sk-ant-…" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(store.get("apiKey", ""))}">
-     <button class="btn" data-act="onbKeyTest">Kaydet ve dene</button><div id="onbKeyOut" class="small" aria-live="polite"></div>`
+     <div class="row"><button class="btn" data-act="pasteKey" data-into="o_key">📋 Yapıştır</button><button class="btn" data-act="onbKeyTest">Kaydet ve dene</button></div><div id="onbKeyOut" class="small" aria-live="polite"></div>`
   ];
   $("#onb").innerHTML = `<div class="step">${steps[onbStep]}</div>
     <div class="dots" aria-hidden="true">${steps.map((_, i) => `<i class="${i === onbStep ? "on" : ""}"></i>`).join("")}</div>
@@ -1155,6 +1158,38 @@ function onbFinish() { Speech.stopAll(); store.set("onb", true); $("#onb").class
 /* =================================================================
    BAŞLANGIÇ
    ================================================================= */
+/* ---------------- Kurulum linki: anahtarı başka telefona tek dokunuşla aktar ----------------
+   Anahtar adresin # kısmında taşınır: bu kısım sunucuya (GitHub) hiç gönderilmez. Açılınca kaydedilir ve adresten hemen silinir. */
+const KEY_RE = /^sk-ant-[A-Za-z0-9_\-]{20,}$/;
+ACT.pasteKey = async el => {
+  const inp = document.getElementById(el.dataset.into); if (!inp) return;
+  try {
+    let t = (await navigator.clipboard.readText() || "").trim();
+    const m = t.match(/sk-ant-[A-Za-z0-9_\-]{20,}/); // mesajın tamamı ya da kurulum linki yapıştırılsa da anahtarı bul
+    if (m) t = m[0];
+    if (!KEY_RE.test(t)) { toast("Panoda anahtar yok — önce anahtarı kopyala"); return; }
+    inp.value = t; toast("Yapıştırıldı — şimdi 'Kaydet ve dene'");
+  } catch { toast("Yapıştırılamadı — kutuya uzun basıp Yapıştır'ı seç"); inp.focus(); }
+};
+ACT.makeSetupLink = async () => {
+  const k = ($("#apiKey").value || store.get("apiKey", "")).trim();
+  const out = $("#setupLinkOut");
+  if (!KEY_RE.test(k)) { out.textContent = "Önce geçerli bir anahtar (sk-ant-…) yapıştır."; return; }
+  const link = location.origin + location.pathname + "#k=" + encodeURIComponent(k);
+  try { await navigator.clipboard.writeText(link); out.textContent = "✅ Link kopyalandı. WhatsApp'ta kardeşine yapıştır; o linke dokunup Chrome/Safari'de açsın."; }
+  catch { out.textContent = link; }
+};
+(function importKeyFromLink() {
+  const m = location.hash.match(/(?:^#|&)k=([^&]+)/); if (!m) return;
+  history.replaceState(null, "", location.pathname + location.search); // anahtarı adres çubuğundan ve geçmişten sil
+  let k = ""; try { k = decodeURIComponent(m[1]).trim(); } catch { }
+  if (!KEY_RE.test(k)) { setTimeout(() => toast("Kurulum linki bozuk görünüyor"), 300); return; }
+  store.set("apiKey", k);
+  setTimeout(() => toast(IS_IOS && !matchMedia("(display-mode: standalone)").matches
+    ? "✅ Anahtar eklendi. Ana Ekrana Ekle yaptıktan sonra bu linke bir kez daha dokun (iPhone ayrı saklar)."
+    : "✅ Anahtar eklendi — çeviri hazır. Bu linkin olduğu mesajı silebilirsin."), 400);
+})();
+
 /* ---------------- Telefona yükle ---------------- */
 // Android/Chrome: tarayıcının yükleme penceresini düğmeyle aç. iPhone: Safari'de elle "Ana Ekrana Ekle" gerekir.
 let installEvt = null;
