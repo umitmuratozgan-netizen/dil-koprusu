@@ -2,7 +2,7 @@
 // Uygulama dosyaları: önce önbellekten anında aç, arkada güncelle (yeni sürüm bir sonraki açılışta gelir).
 // Claude kütüphanesi (sabit sürümlü jsDelivr adresleri): önbellekte varsa oradan.
 // Claude API çağrıları hiçbir zaman önbelleğe girmez.
-const CACHE = "dil-koprusu-v3";
+const CACHE = "dil-koprusu-v4";
 const SHELL = ["./", "index.html", "content.js", "core.js", "app.js", "manifest.webmanifest", "icon.svg", "icon-180.png", "icon-192.png", "icon-512.png"];
 const SDK_PREFIX = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.1.0/";
 

@@ -157,7 +157,7 @@ function renderLearnHome() {
   }).join("");
   const jobCats = C.CATS.filter(c => c.lvl === "AH");
   const mine = aiCats();
-  $("#v-ogren").innerHTML = `
+  $("#v-ogren").innerHTML = `${installCard()}
     <div class="card"><div class="hero">${ring(t.cards, goal)}
       <div class="grow"><h2 style="margin:0">Bugünün dersi</h2>
         <div class="small muted">${plan.due.length} tekrar · ${plan.fresh.length} yeni cümle · hedef ${goal} kart</div>
@@ -1055,6 +1055,23 @@ function onbFinish() { Speech.stopAll(); store.set("onb", true); $("#onb").class
 /* =================================================================
    BAŞLANGIÇ
    ================================================================= */
+/* ---------------- Telefona yükle ---------------- */
+// Android/Chrome: tarayıcının yükleme penceresini düğmeyle aç. iPhone: Safari'de elle "Ana Ekrana Ekle" gerekir.
+let installEvt = null;
+const IS_STANDALONE = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; if (App.view === "ogren" && App.learn.mode === "home") renderLearn(); });
+addEventListener("appinstalled", () => { installEvt = null; store.set("installed", true); toast("Yüklendi 🎉 Artık ana ekrandan açabilirsin"); if (App.view === "ogren") renderLearn(); });
+function installCard() {
+  if (IS_STANDALONE || store.get("installed", false) || store.get("hideInstall", false)) return "";
+  if (!installEvt && !IS_IOS) return "";
+  return `<div class="card" style="border-color:var(--brand)"><div class="row"><div class="grow"><b>📲 Uygulamayı telefona yükle</b>
+    <div class="small muted">${IS_IOS ? "Safari'de alttaki Paylaş □↑ düğmesine bas → <b>Ana Ekrana Ekle</b>." : "Ana ekranda simgesiyle açılır, internetsiz de çalışır."}</div></div>
+    ${installEvt ? `<button class="btn primary" data-act="install">Yükle</button>` : ""}</div>
+    <button class="btn sm ghost" data-act="hideInstall" style="margin-top:4px">Gösterme</button></div>`;
+}
+ACT.install = async () => { if (!installEvt) return; installEvt.prompt(); try { await installEvt.userChoice; } catch { } installEvt = null; renderLearn(); };
+ACT.hideInstall = () => { store.set("hideInstall", true); renderLearn(); };
+
 applyTheme();
 // mikrofon şeridi alt menünün tam üstünde dursun (alt menü yüksekliği cihaza göre değişir)
 const fitDock = () => { const n = $("nav.tabs"); if (n) document.documentElement.style.setProperty("--navh", Math.round(n.getBoundingClientRect().height) + "px"); };
