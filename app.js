@@ -94,7 +94,7 @@ function tab(v) {
     window.scrollTo(0, 0); return;
   }
   // canlı altyazı açıkken sekme değiştirmek dinlemeyi durdurur — sor
-  if (window.LiveUI && LiveUI.isActive && LiveUI.isActive()) {
+  if (window.LiveUI && LiveUI.isActive && LiveUI.isActive() && !(typeof LIVE !== "undefined" && LIVE.status === "paused")) {
     if (!confirm("🎧 Canlı altyazı dinliyor. Başka sekmeye geçersen dinleme durur. Geçilsin mi?")) return;
     LiveUI.stop && LiveUI.stop("tab");
   }
@@ -1311,7 +1311,12 @@ function applyTheme() {
    İLK AÇILIŞ TANITIMI
    ================================================================= */
 let onbStep = 0;
-function showOnboarding() { onbStep = 0; $("#onb").classList.add("on"); renderOnb(); }
+function showOnboarding() {
+  onbStep = 0; $("#onb").classList.add("on"); renderOnb();
+  // Android geri tuşu tanıtımda bir önceki adıma gitsin, uygulamadan çıkmasın
+  const backStep = () => { if (!$("#onb").classList.contains("on")) return; if (onbStep > 0) { onbSaveStep(); onbStep--; renderOnb(); } Back.push(backStep); };
+  Back.push(backStep);
+}
 function renderOnb() {
   const p = profile(); const hasKey = !!store.get("apiKey", "");
   const steps = [
@@ -1368,7 +1373,7 @@ ACT.onbKeyTest = async () => {
   catch (e) { out.textContent = "❌ " + e.message; }
 };
 function onbFinish(to) {
-  onbSaveStep(); Speech.stopAll(); store.set("onb", true); $("#onb").classList.remove("on");
+  onbSaveStep(); Speech.stopAll(); store.set("onb", true); $("#onb").classList.remove("on"); Back.reset();
   if (to === "live") { App.interp.live = true; store.set("interpLive", true); store.set("openInterp", true); tab("ceviri"); }
   else if (to === "talk") { App.interp.live = false; store.set("interpLive", false); store.set("openInterp", true); tab("ceviri"); }
   else tab("ogren");

@@ -1,7 +1,7 @@
 // Dil Köprüsü — çevrimdışı önbellek.
 // Uygulama dosyaları önbellekten anında açılır, arkada güncellenir. Yeni sürüm TÜM dosyalarıyla birlikte (CACHE adı değişince) yüklenir
 // ve kullanıcı "Yenile"ye basınca devreye girer — yarım güncelleme olmaz. Claude API çağrıları asla önbelleğe girmez.
-const CACHE = "dil-koprusu-v8";
+const CACHE = "dil-koprusu-v9";
 const SHELL = ["./", "index.html", "content.js", "core.js", "app.js", "live.js", "listen.js", "career.js", "boot.js",
   "vendor/anthropic-sdk.mjs", "manifest.webmanifest", "icon.svg", "icon-180.png", "icon-192.png", "icon-512.png"];
 

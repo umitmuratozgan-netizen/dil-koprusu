@@ -1,6 +1,6 @@
 /* Dil Köprüsü — başlangıç (tüm modüller yüklendikten sonra çalışır) */
 "use strict";
-const APP_VERSION = "7.1";
+const APP_VERSION = "7.2";
 
 /* ---------------- Kurulum linki: anahtarı başka telefona tek dokunuşla aktar ----------------
    Anahtar adresin # kısmında taşınır: bu kısım sunucuya (GitHub) gönderilmez. Açılınca kaydedilir ve adres çubuğundan silinir.
@@ -93,6 +93,8 @@ const fitDock = () => {
   if (h) document.documentElement.style.setProperty("--headh", Math.round(h.getBoundingClientRect().height) + "px");
 };
 function boot() {
+  // yenilemeden kalan alt-ekran geçmiş kayıtları geri tuşunu bozmasın
+  try { if (history.state && history.state.dk) history.replaceState(null, ""); } catch { }
   applyTheme(); applyFontScale();
   fitDock(); addEventListener("resize", fitDock);
   matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", applyTheme);
@@ -119,13 +121,19 @@ catch (err) {
 /* ---------------- Güncelleme ---------------- */
 if ("serviceWorker" in navigator && location.protocol === "https:") {
   navigator.serviceWorker.register("sw.js").then(reg => {
+    // güncelleme çubuğu ayrı bir öğe: kaybolan bildirim tıklamaları yutmasın, başka bildirim onu silmesin
     const ask = w => {
-      const t = $("#toast"); t.innerHTML = `Yeni sürüm hazır <button class="btn sm" id="updBtn" style="margin-left:6px">Yenile</button>`; t.classList.add("on"); t.style.pointerEvents = "auto";
-      $("#updBtn").onclick = () => { w.postMessage("skipWaiting"); };
+      if ($("#updBar")) return;
+      const b = document.createElement("div"); b.id = "updBar"; b.className = "toast on"; b.style.pointerEvents = "auto"; b.style.top = "calc(56px + env(safe-area-inset-top))"; b.style.bottom = "auto";
+      b.innerHTML = `Yeni sürüm hazır <button class="btn sm" id="updBtn" style="margin-left:6px">Yenile</button> <button class="btn sm ghost" id="updLater" aria-label="Sonra">✕</button>`;
+      document.body.appendChild(b);
+      $("#updBtn").onclick = () => { Back.reset(); w.postMessage("skipWaiting"); };
+      $("#updLater").onclick = () => b.remove();
     };
     if (reg.waiting && navigator.serviceWorker.controller) ask(reg.waiting);
     reg.addEventListener("updatefound", () => { const w = reg.installing; w && w.addEventListener("statechange", () => { if (w.state === "installed" && navigator.serviceWorker.controller) ask(w); }); });
-    let reloaded = false;
-    navigator.serviceWorker.addEventListener("controllerchange", () => { if (reloaded) return; reloaded = true; location.reload(); });
+    // ilk kurulumda (önceden denetleyici yokken) sayfayı yenileme — yalnız güncellemede yenile
+    const hadCtl = !!navigator.serviceWorker.controller; let reloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => { if (!hadCtl || reloaded) return; reloaded = true; location.reload(); });
   }).catch(() => { });
 }
