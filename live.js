@@ -121,7 +121,7 @@ const capHtml = c => {
   const hot = c.hot ? `<div class="why">🔔 ${esc(c.why || "Seninle ilgili olabilir")}</div>${c.kanit ? `<div class="kanit">“${esc(c.kanit)}”</div>` : ""}
     <div class="rep">${c.cevap && c.cevap.nl ? `<button class="chip" data-act="show" data-nl="${esc(c.cevap.nl)}" data-tr="${esc(c.cevap.tr)}">💬 ${esc(c.cevap.nl)}<small>${esc(c.cevap.tr)}</small></button>` : ""}
       <button class="chip" data-act="show" data-nl="Kun je dat herhalen?" data-tr="Tekrar eder misin?">🔁 Kun je dat herhalen?<small>Tekrar eder misin?</small></button></div>` : "";
-  const tools = c.state === "ok" && c.tr ? `<div class="tools">${acts(c.nl || c.raw, c.tr, "", LIVE_SRC)}</div>` : "";
+  const tools = c.state === "ok" && c.tr ? `<div class="tools">${acts(c.nl || c.raw, c.tr, c.ok || "", LIVE_SRC)}</div>` : "";
   return `<div class="${cls}" id="${c.id}" data-act="liveLine" data-id="${c.id}">${learn ? nl + tr : tr + nl}${raw}${hot}${tools}</div>`;
 };
 function updateCap(c) { const el = document.getElementById(c.id); if (el) el.outerHTML = capHtml(c); }
@@ -194,7 +194,7 @@ function renderLive() {
   const shown = LIVE.caps.slice(-LIVE_DOM_MAX);
   $("#liveText") && $("#liveText").classList.add("hidden"); // ara metin artık listenin altında
   $("#v-ceviri").innerHTML = `
-    <div class="ctxbar"><div class="chips" role="group" aria-label="Mod ve durum">${modeChips()}${CTXS.map(([k, l]) => `<button class="chip" data-act="ctx" data-k="${k}" aria-pressed="${k === ctx}">${l}</button>`).join("")}</div>
+    <div class="ctxbar"><div class="row" style="gap:6px;flex-wrap:nowrap"><div class="seg grow" role="group" aria-label="Mod">${modeChips()}</div>${typeof ctxSelect === "function" ? ctxSelect(ctx) : ""}</div>
       <div class="lv-status" id="liveStatus" aria-live="polite">${statusHtml()}</div></div>
     <div id="liveBanners">${bannerHtml()}</div>
     ${!LIVE.caps.length && !on ? `<div class="card"><h2 style="margin-top:0">🎧 Canlı altyazı</h2>
@@ -249,7 +249,7 @@ addEventListener("resize", () => { if (lvOnScreen()) placePill(); });
 /* ---------------- Başlat / durdur ---------------- */
 function liveStart() {
   LIVE.err = null; LIVE.offer = false; LIVE.paused = null; LIVE.restored = 0; LIVE.prompt = false;
-  if (!store.get("apiKey", "") && !DEMO) { LIVE.err = { message: "Altyazı için bir kez API anahtarı gerekiyor (Ben → Ayarlar).", code: "nokey", restart: false }; haptic([60, 40, 60]); return renderLive(); }
+  if (!store.get("apiKey", "") && !DEMO) { LIVE.err = { message: "Altyazı için bir kez kurulum gerekiyor (Ben → 🔧 Kurulum → API anahtarı). Bunu genelde ağabeyin yapar.", code: "nokey", restart: false }; haptic([60, 40, 60]); return renderLive(); }
   if (!LIVE.caps.length || !LIVE.sid) LIVE.sid = Date.now();
   LIVE.want = true; LIVE.userStop = false; LIVE.draftOff = false; LIVE.status = "listening"; LIVE.startAt = Date.now(); LIVE.askAt = LIVE.startAt + LIVE_PROMPT_MS;
   haptic(20); Wake.on();
@@ -262,7 +262,7 @@ function liveStart() {
       if (st === "listening" && LIVE.paused) { LIVE.paused = null; setBanners(); }
       if (st === "silence") haptic([30, 50, 30]);
     },
-    onEnd: () => liveEnded(),
+    onEnd: why => liveEnded(why === "max" ? "max" : why),
     onError: c => {
       if (c === "cancelled") return liveEnded(LIVE.want ? "başka bir ekrana geçildi" : "");
       LIVE.err = { message: Speech.errorText(c), code: c }; LIVE.want = false; liveEnded();
@@ -317,7 +317,7 @@ function showConsent(startAfter) {
     <ul>
       <li><b>Sana ya da ekibe söylenenler için kullan</b> — brifing, görev, vardiya. Başkalarının özel sohbetini dinleme.</li>
       <li><b>İşyerinde telefon kuralı olabilir.</b> Şefine bir kez sor: <i>“Mag ik mijn telefoon gebruiken om te vertalen?”</i> <button class="btn sm" data-act="say" data-say="Mag ik mijn telefoon gebruiken om te vertalen?">🔊</button></li>
-      <li><b>Belçika'da</b> katılmadığın özel konuşmaları gizlice dinlemek ya da kaydetmek yasayla sınırlıdır (Ceza Kanunu md. 314bis). Bu uygulama <b>ses kaydetmez</b>, ama çevrendekilere söylemen en doğrusu. Kesin kural için kontrol et.</li>
+      <li><b>Belçika'da</b> katılmadığın özel konuşmaları gizlice dinlemek ya da kaydetmek yasayla sınırlıdır (Ceza Kanunu — eski md. 314bis; yeni kanunda numara değişmiş olabilir). Bu uygulama <b>ses kaydetmez</b>; ama sesi yazıya telefonun kendi ses tanıması (Android'de Google) çevirir ve ses o sırada onların sunucusunda işlenebilir. Çevrendekilere söylemen en doğrusu. Kesin kural için kontrol et.</li>
       <li>Telefonun ses tanıması sesi yazıya çevirir; yalnız yazı, çeviri için Claude'a gider.</li>
     </ul>
     <div class="reply"><span class="tag br">İş arkadaşlarına söyle</span><div class="mid-nl" style="margin-top:4px">${esc(LV_CONSENT_NL)}</div>
@@ -428,7 +428,7 @@ async function pumpLive() {
     const r = await callClaude({ feature: "live:" + c.id, kind: "live", ctx, system: sysLive(ctx), schema: SCHEMA.live,
       model: store.get("liveModel", "fast") === "best" ? MODEL_BEST : MODEL_FAST, timeout: 30000, maxTokens: 4000, retries: 0, effort: "low",
       content: `Recent captions (oldest first; raw ASR, corrected Dutch, Turkish):\n${recent}\n\nNEWEST raw ASR segment: "${c.raw}"` });
-    c.nl = r.duzeltilmis_nl || c.raw; c.tr = r.tr || "";
+    c.nl = r.duzeltilmis_nl || c.raw; c.tr = r.tr || ""; c.ok = r.okunus || "";
     c.guven = ["yuksek", "orta", "dusuk"].includes(r.guven) ? r.guven : "orta";
     c.hot = !!r.onemli && c.guven !== "dusuk"; // düşük güvende asla 🔔
     c.why = c.hot ? r.not_tr : ""; c.kanit = c.hot ? (r.kanit_nl || "") : "";
@@ -448,7 +448,8 @@ async function pumpLive() {
 
 /* ---------------- Özet ---------------- */
 ACT.liveSum = async el => {
-  const lines = LIVE.caps.filter(c => c.nl && c.state !== "noise").map(c => `NL: ${c.nl}${c.tr ? ` | TR: ${c.tr}` : ""}`);
+  // emin olunmayan satırları işaretle: özet bunları kesin bilgi gibi sunmasın
+  const lines = LIVE.caps.filter(c => c.nl && c.state !== "noise").map(c => `${c.guven && c.guven !== "yuksek" ? "[?] " : ""}NL: ${c.nl}${c.raw && c.raw !== c.nl ? ` (heard: ${c.raw})` : ""}${c.tr ? ` | TR: ${c.tr}` : ""}`);
   if (!lines.length) return;
   el.disabled = true; $("#liveSumOut").innerHTML = spinner("Özetleniyor…");
   try {

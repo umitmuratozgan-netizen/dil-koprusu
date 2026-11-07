@@ -45,7 +45,7 @@ function acts(nl, tr, ok, src, { show = true, add = true } = {}) {
     ${add ? `<button class="ibtn" data-act="add" ${a} aria-label="Kartlarıma ekle">➕</button>` : ""}</div>`;
 }
 const spinner = (t) => `<div class="card flat"><span class="spinner"></span> ${esc(t || "Hazırlanıyor…")}<div class="skel" style="width:80%"></div><div class="skel" style="width:60%"></div></div>`;
-const errBox = (e) => `<div class="errbox" role="alert">⚠️ ${esc(e.message || e)}${e.code === "nokey" ? ` <button class="btn sm" data-act="goKey">Anahtarı gir</button>` : ""}${(e.code === "setup" || e.code === "nokey") ? ` <button class="btn sm" data-act="copy" data-text="${esc("Dil Köprüsü hatası: " + (e.message || "") + (e.detail ? " | " + e.detail : ""))}">📋 Hatayı kopyala (ağabeyine gönder)</button>` : ""}</div>`;
+const errBox = (e) => `<div class="errbox" role="alert">⚠️ ${esc(e.message || e)}${e.code === "nokey" ? ` <button class="btn sm" data-act="goKey">Anahtarı gir</button>` : ""}${(e.code === "setup" || e.code === "nokey" || e.detail) ? ` <button class="btn sm" data-act="copy" data-text="${esc("Dil Köprüsü hatası: " + (e.message || "") + (e.detail ? " | " + e.detail : ""))}">📋 Hatayı kopyala (ağabeyine gönder)</button>` : ""}</div>`;
 function saveItem({ nl, tr, ok, src }) {
   if (!nl) return;
   const list = store.get("saved", []);
@@ -182,8 +182,11 @@ function dailyPlan() {
   const want = Math.max(0, brake - already);
   const unseen = list => list.filter(i => !s[i.nl]);
   const job = unseen(C.CATS.filter(c => c.lvl === "AH").flatMap(catItems));
-  const track = unseen([...LV_ORDER.flatMap(l => C.CATS.filter(c => c.lvl === l).flatMap(catItems)), ...aiCats().flatMap(catItems)]);
-  const fresh = []; let a = 0, b = 0;
+  const track = unseen([...LV_ORDER.flatMap(l => C.CATS.filter(c => c.lvl === l && !c.words).flatMap(catItems)), ...aiCats().flatMap(catItems)]);
+  const lvlNow = LV_ORDER.indexOf(profile().level || "A1");
+  const wordLane = unseen(C.CATS.filter(c => c.words && LV_ORDER.indexOf(c.lvl) <= lvlNow + 1).flatMap(catItems)); // kelime şeridi: günde en fazla 3
+  const fresh = []; let a = 0, b = 0, w = 0;
+  const wantWords = Math.min(3, Math.floor(want / 3)); while (w < wantWords && w < wordLane.length) fresh.push(wordLane[w++]);
   while (fresh.length < want && (a < job.length || b < track.length)) {
     if (b < track.length) fresh.push(track[b++]); // temeller
     if (fresh.length < want && a < job.length) fresh.push(job[a++]); // iş cümleleri
@@ -306,7 +309,8 @@ ACT.daily = () => {
 ACT.checkpoint = el => {
   const l = el.dataset.l; const items = C.CATS.filter(c => c.lvl === l).flatMap(catItems);
   if (items.length < 4) return;
-  const pick = shuffle(items).slice(0, 10);
+  const seen = items.filter(i => SRS.get(i.nl)), unseen = items.filter(i => !SRS.get(i.nl));
+  const pick = [...shuffle(seen).slice(0, 8), ...shuffle(unseen)].slice(0, 10); // çoğunlukla çalışılmış cümleler
   const types = ["quiz", "listen", "order", "dict"];
   startStudy(pick.map((it, i) => ({ type: types[i % 4] === "order" && it.nl.split(" ").length < 3 ? "quiz" : types[i % 4], item: it, pool: items })), `${l} pratik kontrolü`, () => { App.learn = { mode: "home" }; }, { checkpoint: true, level: l });
 };
@@ -370,7 +374,8 @@ function startStudy(tasks, title, onExit, opts = {}) {
 function studyShell(inner) {
   const s = App.learn.s;
   return `<div class="row" style="margin-bottom:12px"><button class="btn sm ghost" data-act="studyExit" aria-label="Çık">✕</button>
-      <div class="studybar" role="progressbar" aria-valuemin="0" aria-valuemax="${s.tasks.length}" aria-valuenow="${s.i}"><i style="width:${Math.round(100 * s.i / s.tasks.length)}%"></i></div></div>
+      <div class="studybar" role="progressbar" aria-valuemin="0" aria-valuemax="${s.tasks.length}" aria-valuenow="${s.i}"><i style="width:${Math.round(100 * s.i / s.tasks.length)}%"></i></div>
+      <span class="small muted">${Math.min(s.i + 1, s.tasks.length)}/${s.tasks.length}</span></div>
     <div id="studyBox">${inner}</div>`;
 }
 function exitStudy(fromBack) {
@@ -409,7 +414,10 @@ function renderStudy() {
 }
 function finishStudy() {
   const s = App.learn.s; const acc = s.total ? Math.round(100 * s.right / s.tasks.length) : 0;
-  if (s.checkpoint && s.level) { const b = store.get("cpBest", {}); b[s.level] = Math.max(b[s.level] || 0, acc); store.set("cpBest", b); }
+  if (s.checkpoint && s.level) { // şansa bağlı tek iyi deneme değil: son iki denemenin ortalaması
+    const h = store.get("cpHist", {}); const arr = [...(h[s.level] || []), acc].slice(-2); h[s.level] = arr; store.set("cpHist", h);
+    const b = store.get("cpBest", {}); b[s.level] = Math.round(arr.reduce((x, y) => x + y, 0) / arr.length); store.set("cpBest", b);
+  }
   App.renderStats(); haptic([20, 40, 20]); // seri günü yalnız 5+ kartta (Progress.didCard) sayılır
   $("#v-ogren").innerHTML = `<div class="card" style="text-align:center;padding:24px">
     <div style="font-size:2.6rem" aria-hidden="true">${acc >= 80 ? "🏆" : "💪"}</div>
@@ -439,7 +447,7 @@ function stFlash(t) {
 ACT.flip = () => {
   $("#fc").classList.add("flipped");
   $("#fcBtns").innerHTML = `<div class="grid2" style="grid-template-columns:1fr 1fr 1fr">
-    <button class="btn" data-act="grade" data-g="0">😕 Bilemedim</button><button class="btn" data-act="grade" data-g="1">🤔 Zor</button><button class="btn primary" data-act="grade" data-g="2">😊 Bildim</button></div>`;
+    <button class="btn" data-act="grade" data-g="0"><span aria-hidden="true">😕</span>Bilemedim</button><button class="btn" data-act="grade" data-g="1"><span aria-hidden="true">🤔</span>Zor</button><button class="btn primary" data-act="grade" data-g="2"><span aria-hidden="true">😊</span>Bildim</button></div>`;
 };
 ACT.grade = el => { haptic(10); nextTask(+el.dataset.g); };
 function stProd(t) {
@@ -462,7 +470,12 @@ ACT.prodMic = el => {
     onError: c => { el.textContent = "🎤 Söyle"; if (c !== "cancelled") $("#prodRes").textContent = Speech.errorText(c); } });
 };
 function stQuiz(t) {
-  const it = t.item; const pool = (t.pool && t.pool.length >= 4 ? t.pool : [...itemIndex().values()]).filter(x => x.nl !== it.nl && x.tr !== it.tr);
+  const it = t.item; const nw = s => String(s).split(/\s+/).length;
+  let pool = (t.pool && t.pool.length >= 4 ? t.pool : [...itemIndex().values()]).filter(x => x.nl !== it.nl && x.tr !== it.tr);
+  if (!(t.pool && t.pool.length >= 4)) { // şıklar uzunluktan tahmin edilemesin: aynı kaynaktan ya da benzer uzunlukta seç
+    const same = pool.filter(x => x.src && x.src === it.src); const near = pool.filter(x => Math.abs(nw(x.nl) - nw(it.nl)) <= 2);
+    pool = same.length >= 3 ? same : near.length >= 3 ? near : pool;
+  }
   const opts = shuffle([it, ...shuffle(pool).slice(0, 3)]);
   const dir = t.type === "listen" ? "listen" : (Math.random() < 0.5 ? "nl2tr" : "tr2nl");
   App.learn.s.q = { opts, dir, done: false };
@@ -479,7 +492,7 @@ ACT.pick = el => {
   $$("#studyBox .opt").forEach((b, k) => { if (q.opts[k].nl === it.nl) b.classList.add("right"); });
   if (!ok) { el.classList.add("wrong", "shake"); haptic([20, 40, 20]); } else { el.classList.add("pop"); haptic(15); }
   if (q.dir === "tr2nl") TTS.speak(it.nl);
-  $("#qNext").innerHTML = `<div class="small muted" style="margin-bottom:8px">${esc(it.nl)} — ${esc(it.tr)}</div><button class="btn primary block" data-act="next" data-mc="1" data-g="${ok ? 2 : 0}">Devam →</button>`;
+  $("#qNext").innerHTML = `<div class="small muted" style="margin-bottom:8px">${esc(it.nl)} — ${esc(it.tr)}</div><button class="btn primary block" data-act="next" data-mc="${q.dir === "listen" ? "0" : "1"}" data-g="${ok ? 2 : 0}">Devam →</button>`;
   $("#qNext button").focus();
 };
 ACT.next = el => nextTask(+el.dataset.g, { mc: el.dataset.mc === "1" });
@@ -655,7 +668,7 @@ function renderInterp() {
   const ctx = App.interp.ctx, serious = SERIOUS.has(ctx);
   const fast = store.get("fastInterp", false);
   $("#v-ceviri").innerHTML = `
-    <div class="ctxbar"><div class="seg" role="group" aria-label="Mod">${modeChips()}</div>
+    <div class="ctxbar flat"><div class="seg" role="group" aria-label="Mod">${modeChips()}</div>
       <div class="row" style="margin-top:6px;gap:6px;flex-wrap:nowrap">${ctxSelect(ctx)}
       ${serious ? `<span class="chip" style="color:var(--danger)" title="Ciddi durumda en iyi model kullanılır">🛡️ En iyi</span>` : `<button class="chip" data-act="fastToggle" aria-pressed="${fast}">⚡ ${fast ? "Hızlı: açık" : "Hızlı: kapalı"}</button>`}
       <button class="chip" data-act="newConv" aria-label="Yeni konuşma">🧹</button></div></div>
@@ -773,8 +786,8 @@ async function interpProcess(dir, raw, { forceBest = false, bubbleId } = {}) {
     scrollToBubble(id);
   } catch (e) {
     setBubble(id, e.code === "abort" ? `<div class="bub ${dir}">${head}<div class="small muted">İptal edildi.</div></div>` : `<div class="bub ${dir}">${head}${errBox(e)}<button class="btn sm" data-act="retry" data-id="${id}" data-dir="${dir}" data-raw="${esc(raw)}">↻ Tekrar dene</button></div>`);
+    scrollToBubble(id);
   }
-  scrollThread();
 }
 ACT.redo = el => { const r = redoMap.get(el.dataset.id); if (r) interpProcess(r.dir, r.raw, { forceBest: true, bubbleId: el.dataset.id }); };
 ACT.retry = el => interpProcess(el.dataset.dir, el.dataset.raw, { bubbleId: el.dataset.id });
@@ -879,7 +892,7 @@ async function rpTurn(line) {
   busyEl().innerHTML = spinner("…");
   const history = rp.lines.length ? rp.lines.map(l => (l.who === "role" ? "Role: " : "User: ") + l.t).join("\n") : "(none yet)";
   try {
-    const r = await callClaude({ feature: "practice", kind: "rp", system: sysRP(), schema: SCHEMA.rp, timeout: 60000,
+    const r = await callClaude({ feature: "practice", kind: "rp", system: sysRP(/^(vdab|mulakat|ladder|cv)/.test(String(rp.sc.id)) ? "career" : ""), schema: SCHEMA.rp, timeout: 60000,
       content: `Scenario: ${rp.sc.d}\nLevel: ${rp.level}\n\nConversation so far:\n${history}\n\nUser's latest line: ${line}` });
     if (my !== rpToken || !rp) return; // kullanıcı senaryodan çıktı: eski cevabı yazma
     busyEl().innerHTML = "";
@@ -987,7 +1000,7 @@ function renderHelp() {
       <button class="tile" data-act="helpGo" data-m="road"><div class="e">🗺️</div><div class="n">Dil yol haritası</div><div class="small muted">kurs, seviye, VDAB</div></button>
       ${EXT.helpTiles.map(t => `<button class="tile" data-act="helpGo" data-m="${esc(t.mode)}"><div class="e">${esc(t.e)}</div><div class="n">${esc(t.n)}</div><div class="small muted">${esc(t.d || "")}</div></button>`).join("")}
     </div>
-    <div class="dangerbox" style="margin-top:12px">🚨 Acil: <b>112</b> (ambulans, itfaiye) · <b>101</b> (polis) · Mesai dışı, acil olmayan doktor: <b>1733</b></div>`;
+    <div class="dangerbox" style="margin-top:12px">🚨 Acil: <b>112</b> (ambulans, itfaiye) · <b>101</b> (polis) · Mesai dışı, acil olmayan doktor: <b>1733</b><br><span class="small">Şiddet: <b>1712</b> · Zehirlenme: <b>070 245 245</b> · Konuşmak için (7/24): <b>106</b> · İntihar düşüncesi: <b>1813</b> — numaraları kontrol et</span></div>`;
 }
 /** Formdaki alanları App.help içinde tut: yeniden çizimde kaybolmasın */
 function keepFields() { $$("#v-yardim [data-keep]").forEach(el => { const f = () => { App.help[el.dataset.keep] = el.value; }; el.addEventListener("input", f); el.addEventListener("change", f); }); }
@@ -1004,7 +1017,7 @@ ACT.docClear = () => { docFiles = []; docFilesInfo(); };
 function maskPII(t) {
   return String(t)
     .replace(/\b\d{2}[.\s]?\d{2}[.\s]?\d{2}[-\s]?\d{3}[.\s]?\d{2}\b/g, "[rijksregisternummer gizlendi]")
-    .replace(/\b([A-Z]{2}\d{2})[\s]?((?:\d{4}[\s]?){2,6})(\d{4})\b/g, (m, a, mid, last) => a + " **** **** " + last);
+    .replace(/\b([A-Z]{2}\d{2})[\s]?((?:\d{4}[\s]?){2,6})(\d{4})\b/gi, (m, a, mid, last) => a + " **** **** " + last);
 }
 /** Model ne derse desin: bağlantı, IBAN ya da tipik dolandırıcılık kelimesi varsa sabit uyarı göster */
 function scamSignals(text) {
@@ -1016,7 +1029,8 @@ function scamSignals(text) {
   return hits;
 }
 ACT.docGo = async el => {
-  const type = $("#docType").value, text = maskPII(($("#docText").value || "").trim()), note = ($("#docNote").value || "").trim();
+  const rawText = ($("#docText").value || "").trim();
+  const type = $("#docType").value, text = maskPII(rawText), note = maskPII(($("#docNote").value || "").trim());
   if (!docFiles.length && !text) { toast("Önce fotoğraf seç ya da metin yapıştır"); return; }
   App.help.type = type; el.disabled = true; $("#docOut").innerHTML = spinner("Belge okunuyor (20–60 sn)…");
   try {
@@ -1026,7 +1040,7 @@ ACT.docGo = async el => {
     const r = await callClaude({ feature: "doc", kind: "doc", system: sysDoc(type), schema: SCHEMA.doc, content: blocks, timeout: 120000, model: MODEL_BEST });
     docFiles = []; docFilesInfo();
     if (type === "mesaj" && r.risk === "yesil") r.risk = "sari"; // mesajlarda temkinli ol
-    const sig = scamSignals(text + " " + r.tutarlar.map(x => x.alinti_nl).join(" ") + " " + r.tarihler.map(x => x.alinti_nl).join(" ") + " " + r.odeme_uyarisi_tr);
+    const sig = scamSignals(rawText + " " + r.tutarlar.map(x => x.alinti_nl).join(" ") + " " + r.tarihler.map(x => x.alinti_nl).join(" ") + " " + r.odeme_uyarisi_tr);
     const riskTxt = { yesil: "🟢 Bilgi amaçlı", sari: "🟡 Bir şey yapman gerekebilir", kirmizi: "🔴 Önemli / acil — yardım al" }[r.risk] || "🟡";
     $("#docOut").innerHTML = `<div class="card risk-${esc(r.risk)}">
       <div class="row between"><b>${esc(r.belge_turu)}</b><span class="tag ${r.risk === "kirmizi" ? "bad" : r.risk === "yesil" ? "ok" : "warn"}">${riskTxt}</span></div>
@@ -1259,7 +1273,7 @@ ACT.export = () => {
   const data = {}; try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.startsWith("dk_") && k !== "dk_apiKey" && !k.startsWith("dk_bad_") && (withLogs || !LOG_KEYS.includes(k))) data[k] = localStorage.getItem(k); } } catch { }
   const a = document.createElement("a"); const url = URL.createObjectURL(new Blob([JSON.stringify({ app: "dil-koprusu", v: 3, at: new Date().toISOString(), data })], { type: "application/json" }));
   a.href = url; a.download = `dil-koprusu-yedek-${todayStr()}.json`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
-  toast(withLogs ? "Yedek indirildi — kişisel konuşmalar içerir, dikkatli sakla" : "Yedek indirildi");
+  toast(withLogs ? "Yedek indirildi — kişisel konuşmalar içerir, dikkatli sakla" : "Yedek indirildi — profil ve CV bilgilerini içerir, kimseyle paylaşma");
 };
 ACT.import = () => $("#importFile").click();
 $("#importFile").addEventListener("change", async e => {

@@ -244,7 +244,7 @@ const TTS = {
   /** Ses listesi gerçekten yüklendikten sonra (voiceschanged ya da 2 sn) hâlâ Felemenkçe ses yoksa bir kez uyar */
   warnNoVoice() {
     if (this.warnT || store.get("warnedVoice", false)) return;
-    const check = () => { this.warnT = null; if (this.nlVoices().length || store.get("warnedVoice", false)) return; store.set("warnedVoice", true); toast("Felemenkçe ses paketi yok — Ben → Ayarlar'da nasıl kurulacağı yazıyor"); };
+    const check = () => { this.warnT = null; if (this.nlVoices().length || store.get("warnedVoice", false)) return; store.set("warnedVoice", true); toast("Felemenkçe ses paketi yok — Ben → 🎨 Görünüm ve ses'te nasıl kurulacağı yazıyor"); };
     if (this.loaded) check(); else this.warnT = setTimeout(() => { this.load(); check(); }, 2000);
   },
   unlock() { // iOS: ilk dokunuşta sessiz bir okuma ile sesi aç
@@ -384,7 +384,7 @@ const Speech = {
       "network": "Ses tanıma için internet gerekiyor.",
       "audio-capture": "Mikrofon bulunamadı ya da başka uygulama kullanıyor (telefon görüşmesi, sesli mesaj…).",
       "nosupport": IN_APP_BROWSER ? "Bu uygulama içi tarayıcıda mikrofon çalışmaz. Linki Chrome (Android) ya da Safari'de (iPhone) aç." : "Bu tarayıcı sesle dinlemeyi desteklemiyor. Android'de Chrome, iPhone'da Safari kullan. Yazarak da çalışır (klavyedeki 🎤 ile).",
-      "language-not-supported": "Bu dil telefonun ses tanımasında yok. Ben → Ayarlar'dan nl-NL'yi dene.",
+      "language-not-supported": "Bu dil telefonun ses tanımasında yok. Ben → 🔧 Kurulum → Dinlenecek Felemenkçe'den nl-NL'yi dene.",
       "start": "Dinleme başlatılamadı, bir daha dene.",
       "paused": "Dinleme durdu (ekran kapandı ya da başka uygulamaya geçildi). Devam etmek için dokun.",
       "silence": "Uzun süre konuşma duyulmadı, dinleme kendiliğinden durdu."
@@ -508,7 +508,10 @@ Speech.live = function ({ lang, onInterim = () => { }, onFinal = () => { }, onEn
     if (ended || !paused) return;
     paused = false; pausedWhy = ""; emptyRuns = 0; fastFails = 0; netFails = 0; lastFinalAt = Date.now();
     if (running && rec) { flushPending(); try { rec.abort(); } catch { } running = false; rec = null; } // eski oturum hâlâ kapanıyor: bırak
-    clearTimeout(restartTimer); restartTimer = setTimeout(() => { if (!ended && !paused) run(); }, 120);
+    clearTimeout(restartTimer);
+    // iPhone: mikrofon ancak dokunuşun içinde başlatılabilir → eski oturum yoksa hemen başlat
+    if (!rec) { try { run(); } catch { restartTimer = setTimeout(() => { if (!ended && !paused) run(); }, 120); } }
+    else restartTimer = setTimeout(() => { if (!ended && !paused) run(); }, 120);
   };
   const handleError = code => {
     if (code === "no-speech" || code === "aborted") return;
@@ -617,7 +620,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 class UserError extends Error { constructor(m, code, detail) { super(m); this.code = code; if (detail) this.detail = detail; } }
 let sdkPromise = null;
 function loadSDK() {
-  if (!sdkPromise) sdkPromise = import(SDK_URL).catch(() => import(SDK_CDN)).then(m => m.default || m.Anthropic).catch(e => { sdkPromise = null; throw e; });
+  if (!sdkPromise) sdkPromise = import(SDK_URL).then(m => m.default || m.Anthropic).catch(e => { sdkPromise = null; throw e; });
   return sdkPromise;
 }
 const SERIOUS = new Set(["doktor", "resmi", "polis", "okul"]);
@@ -762,7 +765,7 @@ async function callClaude({ feature, kind, system, content, schema, ctx, timeout
           return await s.finalMessage();
         } catch (e) {
           const n = String((e && e.name) || "");
-          if ((e && e.status) || got || ctrl.signal.aborted || /Abort|Timeout/i.test(n)) throw e; // gerçek API/ağ hatası
+          if ((e && e.status) || got || ctrl.signal.aborted || /Abort|Timeout|Connection/i.test(n) || !(e instanceof TypeError)) throw e; // gerçek API/ağ hatası: akışı kapatma
           API_FLAGS.noStream = true; // bu ortamda akış çalışmıyor: düz isteğe geç
         }
       }
@@ -831,7 +834,7 @@ async function imageToBlock(file) {
 }
 
 /* ---------------- Talimatlar ---------------- */
-const OKUNUS_RULES = `Pronunciation guide ("okunus") rules: show how a Turkish reader should pronounce the Dutch, using ONLY Turkish letters (never the letter w), lowercase. Mapping: g/ch → h (soft, Flemish); ui → öy; ij/ei → ey; oe → u; eu → ö; u/uu → ü; ie → i; w → v; v → v (voiced in Flemish, never f); sch → s-h; sj → ş; j → y; -isch → is; -ig → ıh; -lijk → lık; unstressed e → ı; -en → ın; -tje → tyı; ou/au → au; long vowels aa/ee/oo stay doubled; uw → üv; ieuw → iuv (nieuw → niuv); eeuw → eev; final b → p and final d → t (hebt → hept, goed → hut, hond → hont); ng is ONE sound: write "ng" and never add a separate g/h after it (zingen → zingın, lang → lang). Flemish loanwords: camion → kamiyon, frigo → friho, badgen → becın. Example: "Goeiedag, hebt u een Bonuskaart?" → "huyıdah, hept ü een boonüskaart".`;
+const OKUNUS_RULES = `Pronunciation guide ("okunus") rules: show how a Turkish reader should pronounce the Dutch, using ONLY Turkish letters (never the letter w), lowercase. Mapping: g/ch → h (soft, Flemish); ui → öy; ij/ei → ey; oe → u; eu → ö; u/uu → ü; ie → i; w → v; v → v (voiced in Flemish, never f); sch → s-h; sj → ş; j → y; -isch → is; -ig → ıh; -lijk → lık; unstressed e → ı; -en → ın; -tje → tyı; ou/au → au; long vowels aa/ee/oo stay doubled; uw → üv; ieuw → iu (nieuw → niu); eeuw → eev; final b → p and final d → t (hebt → hept, goed → hut, hond → hont); ng is ONE sound: write "ng" and never add a separate g/h after it (zingen → zingın, lang → lang). Flemish loanwords: camion → kamyon, frigo → friho, badgen → becın. Example: "Goeiedag, hebt u een Bonuskaart?" → "huyıdah, hept ü een boonüskaart".`;
 /** Albert Heijn / Flaman süpermarket jargonu (canlı altyazı ve iş durumu için) */
 const AH_JARGON = `Flemish supermarket (Albert Heijn) jargon you may hear: rayon (aisle/section), rekken aanvullen (filling shelves), spiegelen (facing: pulling products to the front), rolcontainer (roll cage), transpallet (pallet jack), levering (delivery), lossen (unloading), camion (truck), magazijn (stock room), frigo (cold room/fridge), diepvries (freezer), THT/TGT (best-before / use-by date), afprijzen (marking down), derving (shrinkage/waste), breuk (breakage), kassa openen/sluiten (open/close a till), bijspringen (jump in to help, e.g. at the tills), uurrooster (work schedule), badgen (clock in/out with a badge), refter (staff canteen), teamleider, jobstudent, Bonus/Bonuskaart, Bancontact, Payconiq, maaltijdcheques (meal vouchers), leeggoed/leeggoedbon (bottle deposit / return slip), zelfscan (self-scanning).`;
 const CTX_LABEL = {
@@ -954,7 +957,7 @@ ${OKUNUS_RULES}`;
 function sysLive(ctx) {
   const names = nameVariants();
   return `You produce live Turkish captions for Dutch speech the user overhears around them (they are not necessarily being addressed). ${profileForAI("live")}
-Situation: ${CTX_LABEL[ctx] || CTX_LABEL.genel}.${ctx === "is" ? "" : "\n" + AH_JARGON}
+Situation: ${CTX_LABEL[ctx] || CTX_LABEL.genel}.
 The user's name is ${names[0]}${names.length > 1 ? `; colleagues or the speech recognition may write it as ${names.slice(1).map(n => `"${n}"`).join(", ")}` : ""}. Any of these means the user is mentioned.
 Input: the recent captions for context and the NEWEST automatic speech-recognition (ASR) segment. Segments can be fragments, contain recognition errors, Flemish forms (ge/gij, 'k, da's, efkes, seffens, allee, amai, wablieft) and workplace jargon.
 ${DATA_RULE}
@@ -1002,7 +1005,7 @@ const SCHEMA = {
   debrief: S({ tesvik_tr: STR, eksik_ifadeler: { type: "array", items: ITEM }, sonraki_tr: STR }),
   ping: S({ cevap: STR }),
   // sıra önemli: model önce düzeltilmiş Felemenkçeyi yazar, sonra çevirir; 🔔 yalnız kanıtla
-  live: S({ duzeltilmis_nl: STR, tr: STR, guven: GUVEN, onemli: BOOL, kanit_nl: STR, not_tr: STR, cevap_nl: STR, cevap_tr: STR, cevap_okunus: STR }),
+  live: S({ duzeltilmis_nl: STR, tr: STR, okunus: STR, guven: GUVEN, onemli: BOOL, kanit_nl: STR, not_tr: STR, cevap_nl: STR, cevap_tr: STR, cevap_okunus: STR }),
   livesum: S({ ozet_tr: STR, benimle_ilgili_tr: STR, sorulacak_nl: STR, sorulacak_tr: STR, sorulacak_okunus: STR, kelimeler: { type: "array", items: ITEM }, cumleler: { type: "array", items: ITEM } })
 };
 
@@ -1014,7 +1017,7 @@ function demoAnswer(kind, signal, onPartial) {
     { duzeltilmis_nl: "De levering komt vandaag wat later, rond de middag.", tr: "Sevkiyat bugün biraz geç geliyor, öğlene doğru.", guven: "yuksek", onemli: false, kanit_nl: "", not_tr: "", cevap_nl: "", cevap_tr: "", cevap_okunus: "" },
     { duzeltilmis_nl: P("{NAAM}, kan jij om drie uur naar kassa twee gaan?"), tr: P("{NAAM}, saat üçte 2 numaralı kasaya geçebilir misin?"), guven: "yuksek", onemli: true,
       kanit_nl: P("{NAAM}, kan jij om drie uur naar kassa twee"), not_tr: "Sana 'om drie uur' (saat üç) 'kassa twee'ye (2 numaralı kasa) geçmeni soruyor.",
-      cevap_nl: "Oké, om drie uur naar kassa twee?", cevap_tr: "Tamam, saat üçte kasa 2'ye mi?", cevap_okunus: "okee, om dri üür naar kasa twee?" },
+      cevap_nl: "Oké, om drie uur naar kassa twee?", cevap_tr: "Tamam, saat üçte kasa 2'ye mi?", cevap_okunus: "okee, om dri üür naar kasa tvee?" },
     { duzeltilmis_nl: "… de rolcontainer … achteraan …", tr: "… tekerlekli kafes … arkada …", guven: "dusuk", onemli: false, kanit_nl: "", not_tr: "", cevap_nl: "", cevap_tr: "", cevap_okunus: "" }
   ];
   const data = {
@@ -1046,9 +1049,9 @@ function demoAnswer(kind, signal, onPartial) {
     ping: { cevap: "Hallo!" },
     live: LIVE_DEMO[demoLiveN++ % LIVE_DEMO.length],
     livesum: { ozet_tr: "Takım lideri bugünkü görev dağılımını anlattı. Saat üçte kasada bir kişi eksik olacak. Sevkiyat öğlene doğru gelecek ve süt reyonu doldurulacak.", benimle_ilgili_tr: "Sana 'om drie uur' (saat üç) 'kassa twee'ye (2 numaralı kasa) geçmen soruldu — emin olmak için sor.",
-      sorulacak_nl: "Moet ik om drie uur naar kassa twee?", sorulacak_tr: "Saat üçte kasa 2'ye mi geçmeliyim?", sorulacak_okunus: "mut ik om dri üür naar kasa twee",
+      sorulacak_nl: "Moet ik om drie uur naar kassa twee?", sorulacak_tr: "Saat üçte kasa 2'ye mi geçmeliyim?", sorulacak_okunus: "mut ik om dri üür naar kasa tvee",
       kelimeler: [{ nl: "de levering", tr: "sevkiyat", okunus: "dı leevıring" }, { nl: "de zuivelafdeling", tr: "süt ürünleri reyonu", okunus: "dı zöyvılafdeeling" }, { nl: "de rekken aanvullen", tr: "rafları doldurmak", okunus: "dı rekın aanvülın" }],
-      cumleler: [{ nl: "Kan jij om drie uur naar kassa twee gaan?", tr: "Saat üçte kasa 2'ye geçebilir misin?", okunus: "kan yey om dri üür naar kasa twee haan" },
+      cumleler: [{ nl: "Kan jij om drie uur naar kassa twee gaan?", tr: "Saat üçte kasa 2'ye geçebilir misin?", okunus: "kan yey om dri üür naar kasa tvee haan" },
         { nl: "De levering komt rond de middag.", tr: "Sevkiyat öğlene doğru geliyor.", okunus: "dı leevıring komt ront dı midah" },
         { nl: "Wie kan de rekken aanvullen?", tr: "Rafları kim doldurabilir?", okunus: "vi kan dı rekın aanvülın" }] }
   };

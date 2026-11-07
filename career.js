@@ -54,7 +54,7 @@ ${OKUNUS_RULES}`;
         { tarih: d(7), adim_tr: "VDAB'ye çalışan olarak kaydol ve danışman randevusu iste.", nerede_tr: "vdab.be ya da VDAB ofisi", cumle_nl: "Ik wil graag een afspraak maken met een consulent.", cumle_tr: "Bir danışmanla randevu almak istiyorum.", cumle_okunus: "ik vil hraah een afspraak maakın met een konsülent" },
         { tarih: d(21), adim_tr: "Danışmana bu iş için hangi eğitimin uygun olduğunu sor.", nerede_tr: "VDAB danışmanı", cumle_nl: "Welke opleiding past bij mij?", cumle_tr: "Bana hangi eğitim uygun?", cumle_okunus: "velkı opleyding past bey mey" },
         { tarih: d(45), adim_tr: "CV'ni uygulamada hazırla ve VDAB'ye kontrol ettir.", nerede_tr: "Yardım → CV + VDAB", cumle_nl: "Kunt u mijn cv nakijken?", cumle_tr: "CV'mi kontrol edebilir misiniz?", cumle_okunus: "künt ü meyn see-vee naakeykın" },
-        { tarih: d(80), adim_tr: "İki interim ofisine CV'nle git.", nerede_tr: "Şehrindeki interim ofisleri", cumle_nl: "Ik zoek werk in de logistiek.", cumle_tr: "Lojistikte iş arıyorum.", cumle_okunus: "ik zuk verk in dı loohistiek" }],
+        { tarih: d(80), adim_tr: "İki interim ofisine CV'nle git.", nerede_tr: "Şehrindeki interim ofisleri", cumle_nl: "Ik zoek werk in de logistiek.", cumle_tr: "Lojistikte iş arıyorum.", cumle_okunus: "ik zuk verk in dı loohistik" }],
       uyari_tr: "Eğitim adları, koşullar ve ücretler değişebilir; VDAB danışmanına kontrol ettir." };
   };
 
@@ -96,7 +96,8 @@ ${OKUNUS_RULES}`;
       bindPlan(); return;
     }
     const stepsDone = store.get("ladderSteps", {})[r.id] || [];
-    const lv = ["A1", "A2", "B1", "B2", "C1"]; const gap = lv.indexOf(r.lvl) - lv.indexOf(p.level || "A1");
+    const lv = ["A1", "A2", "B1", "B2", "C1"]; const lvOf = s => lv.indexOf((String(s || "").match(/[ABC][12]/) || ["A1"])[0]);
+    const gap = lvOf(r.lvl) - lvOf(p.level || "A1"); // "A2–B1" gibi aralıklarda alt sınır
     const plan = store.get("plan90", null);
     V().innerHTML = `<div class="row" style="margin-bottom:10px"><button class="btn sm ghost" data-act="crLadderHome">← Merdiven</button></div>
       <div class="card"><h2 style="margin:0">${esc(r.t)}</h2><div class="muted">${esc(r.nl || "")}</div>
@@ -150,7 +151,7 @@ ${OKUNUS_RULES}`;
     opleiding: { type: "array", items: S({ diploma_nl: STR, school: STR, plaats: STR, periode: STR, naric_nl: STR }) },
     talen: { type: "array", items: S({ taal_nl: STR, niveau_nl: STR }) },
     rijbewijs_nl: STR, vaardigheden: ARRSTR, beschikbaarheid_nl: STR,
-    brief_nl: STR, brief_tr: STR, eksik_tr: ARRSTR, ipucu_tr: STR
+    betreft_nl: STR, brief_nl: STR, brief_tr: STR, eksik_tr: ARRSTR, ipucu_tr: STR
   });
   function sysCV() {
     return `You write a Belgian (Flemish) CV and a one-page sollicitatiebrief (motivation letter) in Dutch for a newcomer. ${profileForAI("cv")}
@@ -172,7 +173,7 @@ HARD RULES:
     opleiding: [{ diploma_nl: "Diploma secundair onderwijs (Turkije)", school: "", plaats: "Turkije", periode: "", naric_nl: "" }],
     talen: [{ taal_nl: "Turks", niveau_nl: "moedertaal" }, { taal_nl: "Nederlands", niveau_nl: "A1 (ik volg les)" }, { taal_nl: "Engels", niveau_nl: "A2" }],
     rijbewijs_nl: "Rijbewijs B", vaardigheden: ["Kassasysteem", "Klantvriendelijk", "Flexibel (ook in het weekend)"], beschikbaarheid_nl: "Onmiddellijk beschikbaar; ook in het weekend.",
-    brief_nl: "Beste [naam contactpersoon],\n\nIk solliciteer voor de job van magazijnmedewerker.\n\nNu werk ik bij Albert Heijn. Ik vul rekken aan en ik help klanten. Ik werk graag met mijn handen en in een team.\n\nIk leer elke dag Nederlands en ik volg een cursus. Ik ben flexibel en ik kan ook in het weekend werken.\n\nIk kom graag langs voor een gesprek.\n\nMet vriendelijke groeten,\n[naam]",
+    brief_nl: "Beste [naam contactpersoon],\n\nIk solliciteer voor de job als magazijnmedewerker.\n\nNu werk ik bij Albert Heijn. Ik vul rekken aan en ik help klanten. Ik werk graag met mijn handen en in een team.\n\nIk leer elke dag Nederlands en ik volg een cursus. Ik ben flexibel en ik kan ook in het weekend werken.\n\nIk kom graag langs voor een gesprek.\n\nMet vriendelijke groeten,\n[naam]",
     brief_tr: "Sayın [yetkili], depo elemanı işine başvuruyorum. Şu an Albert Heijn'de çalışıyorum; raf dolduruyor ve müşterilere yardım ediyorum. Elimle ve ekip içinde çalışmayı severim. Her gün Felemenkçe öğreniyorum ve kursa gidiyorum. Esneğim, hafta sonu da çalışabilirim. Görüşmeye gelmekten memnuniyet duyarım. Saygılarımla, [ad]",
     eksik_tr: ["Türkiye'deki işinin firma adını ve yıllarını yazmadın — [köşeli parantezleri] doldur ya da sil.", "Okulunun adını ve mezuniyet yılını ekle."],
     ipucu_tr: "CV'yi PDF olarak gönder. VDAB danışmanına bir kez kontrol ettir. Görüşmeye diploma fotokopilerini götür."
@@ -224,7 +225,7 @@ HARD RULES:
     const head = [c.ad, c.sehir, c.tel, c.mail].filter(Boolean).join("\n");
     const date = `${c.sehir ? String(c.sehir).split(",")[0] + ", " : ""}${new Date().toLocaleDateString("nl-BE", { day: "numeric", month: "long", year: "numeric" })}`;
     const body = String(r.brief_nl || "").replace(/\[naam\]/g, c.ad || "[naam]");
-    return `${head ? head + "\n\n" : ""}${date}\n\n${c.hedef ? `Betreft: sollicitatie ${c.hedef}\n\n` : ""}${body}`;
+    return `${head ? head + "\n\n" : ""}${date}\n\n${r.betreft_nl ? `Betreft: sollicitatie als ${r.betreft_nl}\n\n` : ""}${body}`;
   }
   (function injectCss() {
     const st = document.createElement("style");
@@ -310,7 +311,7 @@ HARD RULES:
      💛 MORAL & DESTEK
      ================================================================= */
   const SOCIAL = [
-    { t: "Molada bir iş arkadaşına hafta sonu planını sor.", nl: "Wat ga jij dit weekend doen?", tr: "Bu hafta sonu ne yapacaksın?", ok: "vat ha yey dit vikınt dun" },
+    { t: "Molada bir iş arkadaşına hafta sonu planını sor.", nl: "Wat ga jij dit weekend doen?", tr: "Bu hafta sonu ne yapacaksın?", ok: "vat ha yey dit vikent dun" },
     { t: "Kütüphanede bir taalcafé ya da sohbet masasının (gesprekstafel) saatini öğren.", nl: "Wanneer is er een taalcafé?", tr: "Taalcafé ne zaman var?", ok: "vaneer is ır een taalkafee" },
     { t: "Bir iş arkadaşına Türkiye'den bir yemek anlat.", nl: "Ken je baklava? Dat is heel lekker!", tr: "Baklavayı bilir misin? Çok lezzetli!", ok: "ken yı baklava? dat is heel lekır" },
     { t: "Bir iş arkadaşına ya da komşuna küçük bir yardım teklif et.", nl: "Kan ik je helpen?", tr: "Sana yardım edebilir miyim?", ok: "kan ik yı helpın" },

@@ -15,7 +15,7 @@
 <meta name="apple-mobile-web-app-title" content="Dil Köprüsü">
 <style>
 :root{
-  --bg:#f5f6f3; --card:#ffffff; --card2:#f0f3f1; --ink:#17201f; --muted:#56635f; --line:#dce3e1; --line-strong:#9fb0ac;
+  --bg:#f5f6f3; --card:#ffffff; --card2:#f0f3f1; --ink:#17201f; --muted:#56635f; --line:#dce3e1; --line-strong:#7f918d;
   --hot:#fde047; --hot-ink:#713f12;
   --brand:#0f766e; --brand-ink:#ffffff; --brand-soft:#d6efea;
   --nl:#a15c07; --nl-soft:#fdf0d8; --tr:#4338ca; --tr-soft:#e6e7fb;
@@ -29,7 +29,7 @@
     --brand:#2dd4bf; --brand-ink:#04201c; --brand-soft:#113934;
     --nl:#fbbf24; --nl-soft:#3a2c10; --tr:#a5b4fc; --tr-soft:#23264a;
     --ok:#4ade80; --ok-soft:#123222; --bad:#fb923c; --bad-soft:#3a2010; --warn:#facc15; --danger:#f87171; --danger-soft:#3b1717;
-    --line-strong:#4a5c59; --hot:#4a3b00; --hot-ink:#fde68a;
+    --line-strong:#71857f; --hot:#4a3b00; --hot-ink:#fde68a;
     --shadow:none;
   }
 }
@@ -38,7 +38,7 @@
   --brand:#2dd4bf; --brand-ink:#04201c; --brand-soft:#113934;
   --nl:#fbbf24; --nl-soft:#3a2c10; --tr:#a5b4fc; --tr-soft:#23264a;
   --ok:#4ade80; --ok-soft:#123222; --bad:#fb923c; --bad-soft:#3a2010; --warn:#facc15; --danger:#f87171; --danger-soft:#3b1717;
-  --line-strong:#4a5c59; --hot:#4a3b00; --hot-ink:#fde68a;
+  --line-strong:#71857f; --hot:#4a3b00; --hot-ink:#fde68a;
   --shadow:none;
 }
 *{box-sizing:border-box}
@@ -192,6 +192,7 @@ body.interp .dock{display:block}
 .cap.hot .nl{color:var(--hot-ink);opacity:.85}
 .cap.hot .why{font-size:.95rem;font-weight:800;color:var(--hot-ink);margin-top:4px}
 .ctxbar{position:sticky;top:var(--headh,calc(46px + env(safe-area-inset-top)));z-index:15;background:var(--bg);padding:6px 0 6px;margin:-6px 0 6px}
+.ctxbar.flat{position:static;margin:0 0 6px}
 .seg{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--line-strong);border-radius:999px;overflow:hidden}
 .seg .chip{border:0;border-radius:0;justify-content:center;display:flex;align-items:center;width:100%}
 .ctxsel{flex:1;min-width:0}
@@ -203,7 +204,13 @@ body.study nav.tabs{display:none}
 body.study #xpPill{display:none}
 body.study main{padding-bottom:calc(24px + env(safe-area-inset-bottom))}
 #fcBtns,#qNext:not(:empty){position:sticky;bottom:0;background:var(--bg);padding:10px 0 calc(10px + env(safe-area-inset-bottom));z-index:5}
-#fcBtns .btn{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60px}
+#fcBtns .btn{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60px;gap:2px}
+body.study #v-ogren.on{min-height:calc(100dvh - var(--headh,48px) - 40px);display:flex;flex-direction:column}
+body.study #fcBtns{margin-top:auto}
+#xpPill{display:none}
+/* kısa ekran ya da büyük yazı: cevaplara yer aç */
+@media (max-height:700px){ .mic{min-height:64px} .mic .sub{display:none} .mic .big{font-size:1.4rem} .dock{padding-top:6px} }
+@media (max-height:600px){ #lifelines{display:none} }
 #fcBtns [data-g="0"]{background:var(--bad-soft)} #fcBtns [data-g="1"]{background:var(--nl-soft)}
 /* müşteriye göster */
 .overlay{position:fixed;inset:0;z-index:60;display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;gap:18px;background:#ffffff;color:#111}

@@ -1,6 +1,6 @@
 /* Dil Köprüsü — başlangıç (tüm modüller yüklendikten sonra çalışır) */
 "use strict";
-const APP_VERSION = "7.0";
+const APP_VERSION = "7.1";
 
 /* ---------------- Kurulum linki: anahtarı başka telefona tek dokunuşla aktar ----------------
    Anahtar adresin # kısmında taşınır: bu kısım sunucuya (GitHub) gönderilmez. Açılınca kaydedilir ve adres çubuğundan silinir.
@@ -67,6 +67,15 @@ ACT.hideInstall = () => { store.set("hideInstall", true); refreshInstall(); };
     if (last && (new Date(todayStr()) - new Date(last)) / 86400000 < 7) return;
     days.push(y); days.sort(); store.set("days", days); store.set("freezeUsed", todayStr());
     setTimeout(() => toast("🧊 Dün kaçırdın ama serin korundu (haftada 1 hak)"), 1200);
+  } catch { }
+})();
+
+/* ---------------- Saklama süresi: 30 günden eski çeviri geçmişi silinir ---------------- */
+(function purgeOld() {
+  try {
+    const cut = Date.now() - 30 * 86400000;
+    const h = store.get("hist", []); const h2 = h.filter(x => x && x.at && x.at > cut); if (h2.length !== h.length) store.set("hist", h2);
+    const c = store.get("conv", []); const c2 = c.filter(x => x && x.at && x.at > Date.now() - 20 * 60000); if (c2.length !== c.length) store.set("conv", c2);
   } catch { }
 })();
 
