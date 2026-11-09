@@ -666,7 +666,7 @@ function renderInterp() {
   $("#lifelines").innerHTML = C.LIFELINES.map(l => `<button class="chip" data-act="show" data-nl="${esc(P(l[0]))}" data-tr="${esc(P(l[1]))}" data-ok="${esc(P(l[2] || ""))}" data-src="Hazır">${esc(P(l[0]))}</button>`).join("");
   if (live) return renderLive();
   const ctx = App.interp.ctx, serious = SERIOUS.has(ctx);
-  const fast = store.get("fastInterp", false);
+  const fast = store.get("fastI", true);
   $("#v-ceviri").innerHTML = `
     <div class="ctxbar flat"><div class="seg" role="group" aria-label="Mod">${modeChips()}</div>
       <div class="row" style="margin-top:6px;gap:6px;flex-wrap:nowrap">${ctxSelect(ctx)}
@@ -693,7 +693,7 @@ function scrollToBubble(id) {
 
 function scrollThread() { const v = App.view; requestAnimationFrame(() => { if (App.view === v && (v === "ceviri" || v === "pratik")) window.scrollTo(0, document.body.scrollHeight); }); }
 ACT.ctx = el => setCtx(el.dataset.k);
-ACT.fastToggle = () => { store.set("fastInterp", !store.get("fastInterp", false)); renderInterp(); };
+ACT.fastToggle = () => { store.set("fastI", !store.get("fastI", true)); renderInterp(); };
 ACT.typeOpen = () => { const d = $("#typeBox"); if (d) { d.open = true; d.scrollIntoView({ block: "center" }); setTimeout(() => $("#typeIn").focus(), 50); } };
 ACT.newConv = () => { conv = []; store.set("conv", conv); thread.length = 0; renderInterp(); toast("Yeni konuşma başladı"); };
 ACT.typeIn = el => { const v = ($("#typeIn").value || "").trim(); if (!v) return; $("#typeIn").value = ""; interpProcess(el.dataset.dir, v); };
@@ -1185,8 +1185,8 @@ function renderBen() {
         <button class="btn sm" data-act="makeSetupLink">🔗 Linki oluştur ve kopyala</button><div id="setupLinkOut" class="small" style="margin-top:6px"></div></details>
       ${usageHtml}
       <h3 style="margin-top:14px">🧠 Yapay zekâ modeli</h3>
-      <label class="row small"><input type="checkbox" id="s_fast" ${store.get("fastInterp", false) ? "checked" : ""}> ⚡ Tercümanda hızlı mod (Claude Haiku: ~2 sn, çok ucuz). Doktor/resmî/okul/polis durumlarında her zaman en iyi model kullanılır.</label>
-      <label class="row small" style="margin-top:8px"><input type="checkbox" id="s_fastP" ${store.get("fastPractice", false) ? "checked" : ""}> ⚡ Konuşma pratiğinde hızlı mod</label>
+      <label class="row small"><input type="checkbox" id="s_fast" ${store.get("fastI", true) ? "checked" : ""}> <span>⚡ Tercümanda hızlı mod (önerilen: ~1–2 sn, çok ucuz). Kapatırsan en iyi model (daha yavaş). Doktor/resmî/okul/polis durumlarında her zaman en iyi model kullanılır.</span></label>
+      <label class="row small" style="margin-top:8px"><input type="checkbox" id="s_fastP" ${store.get("fastP", true) ? "checked" : ""}> <span>⚡ Konuşma pratiğinde hızlı mod (önerilen)</span></label>
       <label class="f" for="s_live">Canlı altyazı modeli</label>
       <select id="s_live"><option value="fast" ${store.get("liveModel", "fast") !== "best" ? "selected" : ""}>⚡ Hızlı & ucuz (önerilen: ~1–2 sn)</option><option value="best" ${store.get("liveModel", "fast") === "best" ? "selected" : ""}>🧠 En iyi (yavaş: ~5–8 sn, pahalı)</option></select>
       <p class="small muted">Varsayılan tercüman: Claude Opus 5.5 (en iyi kalite).</p>
@@ -1204,8 +1204,8 @@ function renderBen() {
     ${EXT.benCards.map(f => { try { return f() || ""; } catch { return ""; } }).join("")}
     <p class="small muted" style="text-align:center">Dil Köprüsü · v${typeof APP_VERSION !== "undefined" ? APP_VERSION : "7"}</p>`;
   const on = (id, fn) => { const el = $(id); if (el) el.onchange = fn; };
-  on("#s_fast", e => store.set("fastInterp", e.target.checked));
-  on("#s_fastP", e => store.set("fastPractice", e.target.checked));
+  on("#s_fast", e => store.set("fastI", e.target.checked));
+  on("#s_fastP", e => store.set("fastP", e.target.checked));
   on("#s_live", e => store.set("liveModel", e.target.value));
   on("#s_voice", e => store.set("voice", e.target.value));
   on("#s_sr", e => store.set("srLang", e.target.value));

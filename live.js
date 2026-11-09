@@ -141,6 +141,9 @@ function bannerHtml() {
   let h = "";
   if (LIVE.err) h += `<div class="errbox" role="alert" style="margin:0 0 10px">⚠️ ${esc(LIVE.err.message || LIVE.err)}
     <div class="row" style="margin-top:8px">${LIVE.err.restart !== false ? `<button class="btn sm primary" data-act="liveRestart">↻ Yeniden başlat</button>` : ""}${LIVE.err.code === "nokey" || LIVE.err.code === "setup" ? `<button class="btn sm" data-act="goKey">🔑 Anahtar</button>` : ""}<button class="btn sm ghost" data-act="liveErrClose">Kapat</button></div></div>`;
+  if (LIVE.hint && lvActive()) { const nl = store.get("srLang", "nl-BE"); h += `<div class="lv-banner" role="status" style="display:block"><b>👂 Henüz Felemenkçe konuşma duyulmadı</b>
+    <ul class="small" style="margin:6px 0;padding-left:18px;font-weight:500"><li>Yakında <b>Felemenkçe</b> konuşulmalı — Türkçe konuşmayı yazmaz.</li><li>Denemek için başka bir cihazda Felemenkçe bir video aç (YouTube: <i>VRT NWS</i>) ve telefonu hoparlöre yaklaştır.</li><li>Mikrofon izni: adres çubuğundaki 🔒 → İzinler → Mikrofon → İzin ver.</li></ul>
+    <div class="row">${nl !== "nl-NL" ? `<button class="btn sm" data-act="liveTryNL">🇳🇱 Hollanda Felemenkçesiyle dene</button>` : ""}<button class="btn sm ghost" data-act="liveHintClose">Tamam</button></div></div>`; }
   if (LIVE.prompt) h += `<div class="lv-banner" role="alert"><div class="grow">⏱ ${Math.round((Date.now() - LIVE.startAt) / 60000)} dakikadır dinliyorum. Devam edeyim mi?</div>
     <button class="btn sm primary" data-act="liveMore">Devam et</button><button class="btn sm" data-act="liveToggle">⏹ Durdur</button></div>`;
   if (LIVE.paused && (!lvActive() || LIVE.status === "paused")) h += `<div class="lv-banner" role="status"><div class="grow">⏸ Dinleme durdu${LIVE.paused.why ? ` — <span class="small">${esc(LIVE.paused.why)}</span>` : ""}</div>
@@ -249,13 +252,14 @@ addEventListener("resize", () => { if (lvOnScreen()) placePill(); });
 /* ---------------- Başlat / durdur ---------------- */
 function liveStart() {
   LIVE.err = null; LIVE.offer = false; LIVE.paused = null; LIVE.restored = 0; LIVE.prompt = false;
-  if (!store.get("apiKey", "") && !DEMO) { LIVE.err = { message: "Altyazı için bir kez kurulum gerekiyor (Ben → 🔧 Kurulum → API anahtarı). Bunu genelde ağabeyin yapar.", code: "nokey", restart: false }; haptic([60, 40, 60]); return renderLive(); }
+  LIVE.nokey = !store.get("apiKey", "") && !DEMO; LIVE.heard = false; LIVE.hint = false;
+  if (LIVE.nokey) LIVE.err = { message: "Çeviri için API anahtarı yok — şimdilik yalnız Felemenkçesini yazıyorum. Türkçesi için: Ben → 🔧 Kurulum (bunu genelde ağabeyin yapar).", code: "nokey", restart: false };
   if (!LIVE.caps.length || !LIVE.sid) LIVE.sid = Date.now();
   LIVE.want = true; LIVE.userStop = false; LIVE.draftOff = false; LIVE.status = "listening"; LIVE.startAt = Date.now(); LIVE.askAt = LIVE.startAt + LIVE_PROMPT_MS;
   haptic(20); Wake.on();
   const h = Speech.live({ lang: store.get("srLang", "nl-BE"),
-    onInterim: t => { LIVE.interim = t || ""; const el = $("#capsInterim"); if (el) { el.textContent = (LIVE.hold ? LIVE.hold.text + " " : "") + LIVE.interim; liveScroll(); } },
-    onFinal: seg => { LIVE.interim = ""; const el = $("#capsInterim"); if (el) el.textContent = ""; addSeg(seg); },
+    onInterim: t => { if (t && !LIVE.heard) { LIVE.heard = true; if (LIVE.hint) { LIVE.hint = false; setBanners(); } } LIVE.interim = t || ""; const el = $("#capsInterim"); if (el) { el.textContent = (LIVE.hold ? LIVE.hold.text + " " : "") + LIVE.interim; liveScroll(); } },
+    onFinal: seg => { if (!LIVE.heard) { LIVE.heard = true; if (LIVE.hint) { LIVE.hint = false; setBanners(); } } LIVE.interim = ""; const el = $("#capsInterim"); if (el) el.textContent = ""; addSeg(seg); },
     onStatus: st => {
       LIVE.status = st; setStatus();
       if (st === "paused") { LIVE.paused = { why: "ekran kapandı ya da uygulamadan çıkıldı" }; setBanners(); setLiveBtn(lvActive()); saveDraft(true); }
@@ -296,6 +300,7 @@ function liveTick() {
   const t = lvMMSS(Date.now() - LIVE.startAt);
   const a = $("#liveTimer"); if (a) a.textContent = t;
   const b = $("#liveBtnTime"); if (b) b.textContent = t;
+  if (!LIVE.heard && !LIVE.hint && Date.now() - LIVE.startAt > 12000) { LIVE.hint = true; haptic([40, 40, 40]); setBanners(); }
   if (!LIVE.prompt && Date.now() >= LIVE.askAt) {
     LIVE.prompt = true; haptic([60, 40, 60]); setBanners();
     LIVE.promptTimer = setTimeout(() => { if (LIVE.prompt && lvActive()) liveStop("timeout"); }, 60000);
@@ -354,6 +359,8 @@ ACT.liveResume = () => {
 };
 ACT.liveRestart = () => { LIVE.err = null; liveStart(); };
 ACT.liveErrClose = () => { LIVE.err = null; setBanners(); };
+ACT.liveHintClose = () => { LIVE.hint = false; LIVE.heard = true; setBanners(); };
+ACT.liveTryNL = () => { store.set("srLang", "nl-NL"); toast("Hollanda Felemenkçesiyle dinliyorum"); if (lvActive()) { LIVE.userStop = true; try { LIVE.h.cancel(); } catch { } } setTimeout(liveStart, 300); };
 ACT.livePauseClose = () => { LIVE.paused = null; setBanners(); setLiveBtn(lvActive()); };
 ACT.liveMore = () => { clearTimeout(LIVE.promptTimer); LIVE.prompt = false; LIVE.askAt = Date.now() + LIVE_PROMPT_MS; setBanners(); };
 ACT.liveSize = el => {
@@ -406,7 +413,8 @@ function pushCap(text, fill) {
     if (LIVE.caps.length === 1 && intro && intro.classList.contains("card") && lvOnScreen()) intro.remove();
     liveScroll(false, true);
   }
-  if (!fill) { LIVE.queue.push(c); pumpLive(); }
+  if (!fill && LIVE.nokey) { c.state = "ok"; c.local = true; } // anahtar yok: yalnız Felemenkçesi
+  else if (!fill) { LIVE.queue.push(c); pumpLive(); }
   setStatus(); saveDraft();
 }
 async function pumpLive() {

@@ -624,10 +624,11 @@ function loadSDK() {
   return sdkPromise;
 }
 const SERIOUS = new Set(["doktor", "resmi", "polis", "okul"]);
-/** Hangi özellik hangi modeli kullanır. Varsayılan en iyi kalite; tercümanda kullanıcı ⚡ hızlı modu seçebilir (ciddi durumlarda yine en iyisi). */
+/** Hangi özellik hangi modeli kullanır. Tercüman ve pratikte varsayılan ⚡ hızlı model (Haiku, ~1–2 sn); kullanıcı kapatabilir. Ciddi durumlarda ve belgelerde en iyi model. */
 function modelFor(feature, ctx) {
-  if (feature === "interp" && !SERIOUS.has(ctx) && store.get("fastInterp", false)) return MODEL_FAST;
-  if (feature === "practice" && store.get("fastPractice", false)) return MODEL_FAST;
+  if (SERIOUS.has(ctx)) return MODEL_BEST; // doktor/resmî/okul/polis: her zaman en iyi model
+  if (feature === "interp" && store.get("fastI", true)) return MODEL_FAST;
+  if (feature === "practice" && store.get("fastP", true)) return MODEL_FAST;
   return MODEL_BEST;
 }
 const inflight = new Map(); // özellik → AbortController (aynı özellikte yeni istek eskisini iptal eder)
@@ -719,8 +720,8 @@ function partialField(raw, key) {
   try { return JSON.parse('"' + s + '"'); } catch { return s.replace(/\\n/g, "\n").replace(/\\"/g, '"').replace(/\\\\/g, "\\"); }
 }
 /* API biçim bayrakları (oturum boyunca): yedek-model betası 400 verdiyse, akış çalışmıyorsa, model "effort" kabul etmiyorsa */
-const API_FLAGS = { noFallback: false, noStream: false, noEffort: new Set() };
-const isShapeError = msg => /schema|json|format|output_config|beta|fallback|effort|not supported|unsupported|unknown (field|param)|extra inputs|not permitted|additional propert/i.test(msg);
+const API_FLAGS = { noFallback: false, noStream: false, noEffort: new Set(), noThinkOff: false };
+const isShapeError = msg => /schema|json|format|output_config|beta|fallback|effort|not supported|unsupported|unknown (field|param)|extra inputs|not permitted|additional propert|thinking/i.test(msg);
 const EFFORT_DEFAULT = { doc: "medium", livesum: "medium" };
 /**
  * Claude'a tek bir yapılandırılmış istek. content: metin ya da içerik blokları (görsel için).
@@ -749,11 +750,13 @@ async function callClaude({ feature, kind, system, content, schema, ctx, timeout
     const messages = [{ role: "user", content }];
     const oc = withSchema => { const o = {}; if (effort && !API_FLAGS.noEffort.has(m)) o.effort = effort; if (withSchema) o.format = { type: "json_schema", schema }; return Object.keys(o).length ? o : undefined; };
     const opts = { signal: ctrl.signal, timeout };
+    // Haiku: kısa çeviri işlerinde "düşünme" adımını kapat → çok daha hızlı cevap
+    const thk = () => m.startsWith("claude-haiku") && !API_FLAGS.noThinkOff && (!effort || effort === "low" || effort === "medium") ? { thinking: { type: "disabled" } } : {};
     // 1) Opus: reddedilirse sunucu tarafında yedek modele geçiş; 2) düz istek; 3) şemasız, metinle JSON
     const attempts = [];
     if (m.startsWith("claude-opus") && !API_FLAGS.noFallback) attempts.push({ id: "fallback", beta: true, params: () => ({ model: m, max_tokens: maxTokens, system, messages, output_config: oc(true), betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" }) });
-    attempts.push({ id: "plain", params: () => ({ model: m, max_tokens: maxTokens, system, messages, output_config: oc(true) }) });
-    attempts.push({ id: "text", params: () => ({ model: m, max_tokens: maxTokens, messages, output_config: oc(false),
+    attempts.push({ id: "plain", params: () => ({ model: m, max_tokens: maxTokens, system, messages, output_config: oc(true), ...thk() }) });
+    attempts.push({ id: "text", params: () => ({ model: m, max_tokens: maxTokens, messages, output_config: oc(false), ...thk(),
       system: system + "\n\nReturn ONLY one JSON object (no markdown) matching this JSON schema:\n" + JSON.stringify(schema) }) });
     const send = async a => {
       const p = a.params(); const api = a.beta ? client.beta.messages : client.messages;
@@ -786,6 +789,7 @@ async function callClaude({ feature, kind, system, content, schema, ctx, timeout
           const em = String((e && e.message) || "");
           if (!(e && e.status === 400) || /credit balance|usage limit|spend(ing)? limit/i.test(em)) throw friendlyError(e);
           if (/effort|output_config/i.test(em) && effort && !API_FLAGS.noEffort.has(m)) { API_FLAGS.noEffort.add(m); continue; } // aynı biçimi effort'suz dene
+          if (/thinking/i.test(em) && !API_FLAGS.noThinkOff && m.startsWith("claude-haiku")) { API_FLAGS.noThinkOff = true; continue; } // düşünmeyi kapatmak kabul edilmedi: açık haliyle dene
           if (a.id === "fallback" && /fallback|beta/i.test(em)) API_FLAGS.noFallback = true;
           if (!isShapeError(em)) throw friendlyError(e); // biçimle ilgisi olmayan 400: zinciri sürdürme
           break; // sıradaki biçimi dene
