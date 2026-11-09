@@ -1,6 +1,8 @@
 /* Dil Köprüsü — iş merdiveni, CV ve motivasyon mektubu, moral kartı */
 "use strict";
 (function () {
+  // Bu modülün tamamı Belçika'ya özel (VDAB, Flaman CV, Felemenkçe moral görevleri): başka dilde hiçbir şey kaydetme
+  if (typeof L !== "undefined" && !L.belgium) return;
   const LADDER = () => Array.isArray(window.LADDER) ? window.LADDER : [];
   const MORAL = () => (window.MORAL && typeof window.MORAL === "object") ? window.MORAL : null;
   const pz = s => typeof personalize === "function" ? personalize(String(s ?? "")) : String(s ?? "").replace(/\{NAAM\}/g, profile().name || "Oğuz");

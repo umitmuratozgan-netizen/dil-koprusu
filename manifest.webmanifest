@@ -1,7 +1,7 @@
 {
-  "name": "Dil Köprüsü — Felemenkçe öğren, tercüman, Belçika yardımcısı",
+  "name": "Dil Köprüsü — Felemenkçe ve İngilizce öğren, sesli tercüman",
   "short_name": "Dil Köprüsü",
-  "description": "Felemenkçe (Flaman) dersleri, sesli tercüman, konuşma pratiği ve Belçika'da yeni hayat yardımcısı",
+  "description": "Felemenkçe (Flaman) ve İngilizce dersleri, sesli tercüman, canlı altyazı, konuşma pratiği",
   "lang": "tr",
   "start_url": "./",
   "scope": "./",

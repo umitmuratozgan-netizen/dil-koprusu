@@ -1,6 +1,6 @@
 /* Dil Köprüsü — başlangıç (tüm modüller yüklendikten sonra çalışır) */
 "use strict";
-const APP_VERSION = "7.3";
+const APP_VERSION = "8.0";
 
 /* ---------------- Kurulum linki: anahtarı başka telefona tek dokunuşla aktar ----------------
    Anahtar adresin # kısmında taşınır: bu kısım sunucuya (GitHub) gönderilmez. Açılınca kaydedilir ve adres çubuğundan silinir.

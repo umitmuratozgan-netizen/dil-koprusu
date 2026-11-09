@@ -87,7 +87,15 @@ const lvOnScreen = () => App.view === "ceviri" && !!App.interp.live;
 const lvLearn = () => !!store.get("liveLearn", false);
 const lvNorm = s => String(s || "").toLowerCase().replace(/[.,!?…;:"“”']/g, " ").replace(/\s+/g, " ").trim();
 // Dolgu sözcükleri: API'ye gitmeden yerelde çevrilir ("" = gürültü, satır hiç gösterilmez)
-const LV_FILLER = {
+const LV_FILLER_EN = {
+  "yes": "Evet.", "yeah": "Evet.", "yep": "Evet.", "yes yes": "Evet evet.", "yeah yeah": "Evet evet.", "no": "Hayır.", "nope": "Hayır.", "no no": "Hayır hayır.",
+  "okay": "Tamam.", "ok": "Tamam.", "okey": "Tamam.", "alright": "Peki, tamam.", "all right": "Peki, tamam.", "right": "Doğru / peki.", "sure": "Tabii.", "of course": "Tabii ki.", "exactly": "Aynen.", "great": "Harika.", "good": "İyi.", "fine": "Tamam, iyi.", "perfect": "Mükemmel.", "cool": "Süper.", "i see": "Anlıyorum.",
+  "thanks": "Teşekkürler.", "thank you": "Teşekkür ederim.", "thank you very much": "Çok teşekkür ederim.", "thanks a lot": "Çok teşekkürler.", "cheers": "Sağ ol.",
+  "sorry": "Pardon.", "excuse me": "Affedersiniz.", "pardon": "Efendim? / Pardon.", "hello": "Merhaba.", "hi": "Selam.", "hey": "Selam.", "bye": "Hoşça kal.", "goodbye": "Hoşça kal.", "bye bye": "Hoşça kal.",
+  "good morning": "Günaydın.", "good afternoon": "İyi günler.", "good evening": "İyi akşamlar.", "see you": "Görüşürüz.", "see you later": "Sonra görüşürüz.", "see you tomorrow": "Yarın görüşürüz.",
+  "uh": "", "um": "", "uhm": "", "umm": "", "er": "", "erm": "", "ah": "", "eh": "", "hm": "", "hmm": "", "mm": "", "mhm": "", "uh huh": ""
+};
+const LV_FILLER_NL = {
   "ja": "Evet.", "jaja": "Evet evet.", "ja ja": "Evet evet.", "ja hoor": "Evet tabii.", "jawel": "Evet, öyle.", "nee": "Hayır.", "neen": "Hayır.", "nee nee": "Hayır hayır.",
   "oké": "Tamam.", "oke": "Tamam.", "ok": "Tamam.", "okay": "Tamam.", "goed": "İyi / tamam.", "prima": "Tamam, güzel.", "top": "Süper.", "zeker": "Kesinlikle.",
   "merci": "Teşekkürler.", "dank je": "Teşekkürler.", "dank u": "Teşekkürler.", "dankjewel": "Teşekkürler.", "dank je wel": "Teşekkürler.", "dank u wel": "Teşekkürler.", "bedankt": "Teşekkürler.", "merci hé": "Teşekkürler.",
@@ -95,8 +103,27 @@ const LV_FILLER = {
   "goeiedag": "İyi günler.", "goeiemorgen": "Günaydın.", "goedemorgen": "Günaydın.", "goeienavond": "İyi akşamlar.", "tot straks": "Sonra görüşürüz.", "tot morgen": "Yarın görüşürüz.", "tot ziens": "Hoşça kal.", "daag": "Hoşça kal.",
   "euh": "", "eh": "", "ehm": "", "uhm": "", "hm": "", "hmm": "", "mm": ""
 };
+const LV_FILLER = LANG === "en" ? LV_FILLER_EN : LV_FILLER_NL;
 // Cümle bu sözcüklerle bitiyorsa devamı geliyor demektir → kısa süre bekle
-const LV_OPEN_END = /\b(en|maar|want|dus|of|omdat|als|dat|die|de|het|een|van|voor|met|naar|om|op|in|aan|te|bij|tot|uit|zodat|wanneer|terwijl|tegen|over|zonder)$/i;
+const LV_OPEN_END = LANG === "en"
+  ? /\b(and|but|because|so|or|if|that|which|who|the|a|an|of|for|with|to|in|on|at|from|about|by|into|than|as|when|while|until|our|your|their|my|is|are|was|will|would|can|could|should)$/i
+  : /\b(en|maar|want|dus|of|omdat|als|dat|die|de|het|een|van|voor|met|naar|om|op|in|aan|te|bij|tot|uit|zodat|wanneer|terwijl|tegen|over|zonder)$/i;
+/* Dile göre arayüz metinleri (Felemenkçe değerler eski sabit metinlerin aynısı) */
+const LVT = LANG === "en" ? {
+  again: ["Could you repeat that, please?", "Tekrar eder misiniz?"],
+  video: "BBC News",
+  intro: "Toplantıda, telefonda ya da yanında konuşulan İngilizceyi dinler, her cümleyi Türkçe altyazı gibi yazar. Sana bir şey sorulduğunda, adın geçtiğinde, bir tarih, rakam ya da görev söylendiğinde satır <b>🔔 sarı</b> yanar ve telefon titrer.",
+  nokey: "Çeviri için API anahtarı yok — şimdilik yalnız İngilizcesini yazıyorum. Türkçesi için: Ben → 🔧 Kurulum.",
+  consent: ["I'm using live translation on my phone so I can follow. Is that okay?", "aym yuuzing layv trensleyşın on may foun sou ay ken folou. iz det oukey?", "Takip edebileyim diye telefonumda canlı çeviri kullanıyorum. Sorun olur mu?"],
+  tellTag: "Toplantıdakilere söyle"
+} : {
+  again: ["Kun je dat herhalen?", "Tekrar eder misin?"],
+  video: "VRT NWS",
+  intro: "Yanında konuşulan Felemenkçeyi dinler, her cümleyi Türkçe altyazı gibi yazar. Sana bir iş söylendiğinde, adın geçtiğinde ya da saat/vardiya değiştiğinde satır <b>🔔 sarı</b> yanar ve telefon titrer.",
+  nokey: "Çeviri için API anahtarı yok — şimdilik yalnız Felemenkçesini yazıyorum. Türkçesi için: Ben → 🔧 Kurulum (bunu genelde ağabeyin yapar).",
+  consent: ["Mijn telefoon vertaalt wat er gezegd wordt, zodat ik het begrijp. Is dat oké?", "meyn telefoon vertaalt vat er hızeht vort, zoodat ik ıt bıhreyp. is dat ookee?", "Telefonum söylenenleri çeviriyor, anlayabileyim diye. Sorun olur mu?"],
+  tellTag: "İş arkadaşlarına söyle"
+};
 function lvFiller(text) {
   const n = lvNorm(text); if (!n) return "";
   if (n in LV_FILLER) return LV_FILLER[n];
@@ -116,11 +143,11 @@ const capHtml = c => {
     const t = (low ? "belki: " : "") + c.tr;
     tr = learn && !c.shown ? `<div class="tr blur" data-act="liveReveal" data-id="${c.id}" title="Türkçesini göster">${esc(t)}</div>` : `<div class="tr">${esc(t)}</div>`;
   }
-  const nl = `<div class="nl">${learn ? "" : "🇧🇪 "}${esc(c.nl || c.raw)}</div>`;
+  const nl = `<div class="nl">${learn ? "" : L.flag + " "}${esc(c.nl || c.raw)}</div>`;
   const raw = c.raw && c.nl && lvNorm(c.raw) !== lvNorm(c.nl) ? `<div class="raw">duyulan: “${esc(c.raw)}”</div>` : "";
   const hot = c.hot ? `<div class="why">🔔 ${esc(c.why || "Seninle ilgili olabilir")}</div>${c.kanit ? `<div class="kanit">“${esc(c.kanit)}”</div>` : ""}
     <div class="rep">${c.cevap && c.cevap.nl ? `<button class="chip" data-act="show" data-nl="${esc(c.cevap.nl)}" data-tr="${esc(c.cevap.tr)}">💬 ${esc(c.cevap.nl)}<small>${esc(c.cevap.tr)}</small></button>` : ""}
-      <button class="chip" data-act="show" data-nl="Kun je dat herhalen?" data-tr="Tekrar eder misin?">🔁 Kun je dat herhalen?<small>Tekrar eder misin?</small></button></div>` : "";
+      <button class="chip" data-act="show" data-nl="${esc(LVT.again[0])}" data-tr="${esc(LVT.again[1])}">🔁 ${esc(LVT.again[0])}<small>${esc(LVT.again[1])}</small></button></div>` : "";
   const tools = c.state === "ok" && c.tr ? `<div class="tools">${acts(c.nl || c.raw, c.tr, c.ok || "", LIVE_SRC)}</div>` : "";
   return `<div class="${cls}" id="${c.id}" data-act="liveLine" data-id="${c.id}">${learn ? nl + tr : tr + nl}${raw}${hot}${tools}</div>`;
 };
@@ -141,9 +168,9 @@ function bannerHtml() {
   let h = "";
   if (LIVE.err) h += `<div class="errbox" role="alert" style="margin:0 0 10px">⚠️ ${esc(LIVE.err.message || LIVE.err)}
     <div class="row" style="margin-top:8px">${LIVE.err.restart !== false ? `<button class="btn sm primary" data-act="liveRestart">↻ Yeniden başlat</button>` : ""}${LIVE.err.code === "nokey" || LIVE.err.code === "setup" ? `<button class="btn sm" data-act="goKey">🔑 Anahtar</button>` : ""}<button class="btn sm ghost" data-act="liveErrClose">Kapat</button></div></div>`;
-  if (LIVE.hint && lvActive()) { const nl = store.get("srLang", "nl-BE"); h += `<div class="lv-banner" role="status" style="display:block"><b>👂 Henüz Felemenkçe konuşma duyulmadı</b>
-    <ul class="small" style="margin:6px 0;padding-left:18px;font-weight:500"><li>Yakında <b>Felemenkçe</b> konuşulmalı — Türkçe konuşmayı yazmaz.</li><li>Denemek için başka bir cihazda Felemenkçe bir video aç (YouTube: <i>VRT NWS</i>) ve telefonu hoparlöre yaklaştır.</li><li>Mikrofon izni: adres çubuğundaki 🔒 → İzinler → Mikrofon → İzin ver.</li></ul>
-    <div class="row">${nl !== "nl-NL" ? `<button class="btn sm" data-act="liveTryNL">🇳🇱 Hollanda Felemenkçesiyle dene</button>` : ""}<button class="btn sm ghost" data-act="liveHintClose">Tamam</button></div></div>`; }
+  if (LIVE.hint && lvActive()) { const nl = store.get("srLang", L.sr); h += `<div class="lv-banner" role="status" style="display:block"><b>👂 Henüz ${L.ad} konuşma duyulmadı</b>
+    <ul class="small" style="margin:6px 0;padding-left:18px;font-weight:500"><li>Yakında <b>${L.ad}</b> konuşulmalı — Türkçe konuşmayı yazmaz.</li><li>Denemek için başka bir cihazda ${L.ad} bir video aç (YouTube: <i>${LVT.video}</i>) ve telefonu hoparlöre yaklaştır.</li><li>Mikrofon izni: adres çubuğundaki 🔒 → İzinler → Mikrofon → İzin ver.</li></ul>
+    <div class="row">${nl !== L.srAlt ? `<button class="btn sm" data-act="liveTryNL">${LANG === "nl" ? L.flagAlt : "🔁"} ${L.srAltAd}yle dene</button>` : ""}<button class="btn sm ghost" data-act="liveHintClose">Tamam</button></div></div>`; }
   if (LIVE.prompt) h += `<div class="lv-banner" role="alert"><div class="grow">⏱ ${Math.round((Date.now() - LIVE.startAt) / 60000)} dakikadır dinliyorum. Devam edeyim mi?</div>
     <button class="btn sm primary" data-act="liveMore">Devam et</button><button class="btn sm" data-act="liveToggle">⏹ Durdur</button></div>`;
   if (LIVE.paused && (!lvActive() || LIVE.status === "paused")) h += `<div class="lv-banner" role="status"><div class="grow">⏸ Dinleme durdu${LIVE.paused.why ? ` — <span class="small">${esc(LIVE.paused.why)}</span>` : ""}</div>
@@ -160,7 +187,7 @@ function settingsHtml() {
   return `<details class="card" id="liveSet"><summary>⚙️ Altyazı ayarları</summary>
     <div class="lv-tog"><div><b>Model</b><div class="small muted">Hızlı: ~1–2 sn, 10 dk birkaç sent. En iyi: ~5–8 sn, 10 dk ~1 $.</div></div>
       <div class="chips" role="group" aria-label="Altyazı modeli" style="flex-wrap:wrap;justify-content:flex-end"><button class="chip" data-act="liveModel" data-m="fast" aria-pressed="${lm !== "best"}">⚡ Hızlı</button><button class="chip" data-act="liveModel" data-m="best" aria-pressed="${lm === "best"}">🧠 En iyi</button></div></div>
-    ${tog("liveLearn", learn, "📖 Öğrenme modu", "Önce Felemenkçe gelir; Türkçesi bulanık, dokununca açılır.")}
+    ${tog("liveLearn", learn, "📖 Öğrenme modu", `Önce ${L.ad} gelir; Türkçesi bulanık, dokununca açılır.`)}
     ${tog("liveKeep", keep, "🗂 Dökümü sakla", "Kapalıyken yalnız özet ve kelimeler saklanır, cümleler saklanmaz.")}
     <div class="lv-tog"><div><b>ℹ️ Kurallar ve izin cümlesi</b></div><button class="chip" data-act="liveConsentShow">Göster</button></div>
   </details>`;
@@ -201,7 +228,7 @@ function renderLive() {
       <div class="lv-status" id="liveStatus" aria-live="polite">${statusHtml()}</div></div>
     <div id="liveBanners">${bannerHtml()}</div>
     ${!LIVE.caps.length && !on ? `<div class="card"><h2 style="margin-top:0">🎧 Canlı altyazı</h2>
-      <p style="margin:0 0 8px">Yanında konuşulan Felemenkçeyi dinler, her cümleyi Türkçe altyazı gibi yazar. Sana bir iş söylendiğinde, adın geçtiğinde ya da saat/vardiya değiştiğinde satır <b>🔔 sarı</b> yanar ve telefon titrer.</p>
+      <p style="margin:0 0 8px">${LVT.intro}</p>
       <ul class="small" style="margin:0;padding-left:18px"><li>Telefonu konuşanlara yakın tut.</li><li>Bir satıra dokun: 🔊 dinle, ➕ kartlarına ekle.</li><li>Bitince <b>Özetle</b>: kısa özet + yeni kelimeler.</li><li>Ses kaydedilmez.</li></ul></div>` : ""}
     <div id="caps" style="--capk:${store.get("capSize", 1)}">${shown.map(capHtml).join("")}</div>
     <div id="capsInterim" aria-hidden="true">${esc(LIVE.interim)}</div>
@@ -224,7 +251,7 @@ function setLiveBtn(on) {
   b.classList.toggle("live", on); b.setAttribute("aria-pressed", String(on));
   const l = b.querySelector(".lbl"), s = b.querySelector(".sub");
   if (l) l.textContent = on ? "⏹ Dinlemeyi durdur" : LIVE.paused || LIVE.restored ? "▶ Dinlemeye devam et" : "Dinlemeye başla";
-  if (s) s.innerHTML = on ? `<span class="lv-dot" aria-hidden="true"></span> dinliyor · <span id="liveBtnTime">${lvMMSS(Date.now() - LIVE.startAt)}</span> — telefonu yakın tut` : "Yakındaki Felemenkçe konuşma → canlı Türkçe altyazı";
+  if (s) s.innerHTML = on ? `<span class="lv-dot" aria-hidden="true"></span> dinliyor · <span id="liveBtnTime">${lvMMSS(Date.now() - LIVE.startAt)}</span> — telefonu yakın tut` : `Yakındaki ${L.ad} konuşma → canlı Türkçe altyazı`;
 }
 
 /* ---------------- Kaydırma: yalnız en alttaysan takip et ---------------- */
@@ -253,11 +280,11 @@ addEventListener("resize", () => { if (lvOnScreen()) placePill(); });
 function liveStart() {
   LIVE.err = null; LIVE.offer = false; LIVE.paused = null; LIVE.restored = 0; LIVE.prompt = false;
   LIVE.nokey = !store.get("apiKey", "") && !DEMO; LIVE.heard = false; LIVE.hint = false;
-  if (LIVE.nokey) LIVE.err = { message: "Çeviri için API anahtarı yok — şimdilik yalnız Felemenkçesini yazıyorum. Türkçesi için: Ben → 🔧 Kurulum (bunu genelde ağabeyin yapar).", code: "nokey", restart: false };
+  if (LIVE.nokey) LIVE.err = { message: LVT.nokey, code: "nokey", restart: false };
   if (!LIVE.caps.length || !LIVE.sid) LIVE.sid = Date.now();
   LIVE.want = true; LIVE.userStop = false; LIVE.draftOff = false; LIVE.status = "listening"; LIVE.startAt = Date.now(); LIVE.askAt = LIVE.startAt + LIVE_PROMPT_MS;
   haptic(20); Wake.on();
-  const h = Speech.live({ lang: store.get("srLang", "nl-BE"),
+  const h = Speech.live({ lang: store.get("srLang", L.sr),
     onInterim: t => { if (t && !LIVE.heard) { LIVE.heard = true; if (LIVE.hint) { LIVE.hint = false; setBanners(); } } LIVE.interim = t || ""; const el = $("#capsInterim"); if (el) { el.textContent = (LIVE.hold ? LIVE.hold.text + " " : "") + LIVE.interim; liveScroll(); } },
     onFinal: seg => { if (!LIVE.heard) { LIVE.heard = true; if (LIVE.hint) { LIVE.hint = false; setBanners(); } } LIVE.interim = ""; const el = $("#capsInterim"); if (el) el.textContent = ""; addSeg(seg); },
     onStatus: st => {
@@ -313,21 +340,24 @@ window.LiveUI = {
 };
 
 /* ---------------- İlk kullanım: kurallar ve izin ---------------- */
-const LV_CONSENT_NL = "Mijn telefoon vertaalt wat er gezegd wordt, zodat ik het begrijp. Is dat oké?";
+const LV_CONSENT_NL = LVT.consent[0];
 function showConsent(startAfter) {
   closeConsent();
   const d = document.createElement("div"); d.className = "lv-sheet"; d.id = "liveConsent";
   d.setAttribute("role", "dialog"); d.setAttribute("aria-modal", "true"); d.setAttribute("aria-label", "Canlı altyazı kuralları");
   d.innerHTML = `<div class="in"><h2 style="margin-top:0">🎧 Başlamadan önce</h2>
-    <ul>
+    <ul>${L.belgium ? `
       <li><b>Sana ya da ekibe söylenenler için kullan</b> — brifing, görev, vardiya. Başkalarının özel sohbetini dinleme.</li>
       <li><b>İşyerinde telefon kuralı olabilir.</b> Şefine bir kez sor: <i>“Mag ik mijn telefoon gebruiken om te vertalen?”</i> <button class="btn sm" data-act="say" data-say="Mag ik mijn telefoon gebruiken om te vertalen?">🔊</button></li>
-      <li><b>Belçika'da</b> katılmadığın özel konuşmaları gizlice dinlemek ya da kaydetmek yasayla sınırlıdır (Ceza Kanunu — eski md. 314bis; yeni kanunda numara değişmiş olabilir). Bu uygulama <b>ses kaydetmez</b>; ama sesi yazıya telefonun kendi ses tanıması (Android'de Google) çevirir ve ses o sırada onların sunucusunda işlenebilir. Çevrendekilere söylemen en doğrusu. Kesin kural için kontrol et.</li>
+      <li><b>Belçika'da</b> katılmadığın özel konuşmaları gizlice dinlemek ya da kaydetmek yasayla sınırlıdır (Ceza Kanunu — eski md. 314bis; yeni kanunda numara değişmiş olabilir). Bu uygulama <b>ses kaydetmez</b>; ama sesi yazıya telefonun kendi ses tanıması (Android'de Google) çevirir ve ses o sırada onların sunucusunda işlenebilir. Çevrendekilere söylemen en doğrusu. Kesin kural için kontrol et.</li>` : `
+      <li><b>Katıldığın görüşmeler ve sana söylenenler için kullan</b> — toplantı, telefon, sunum. Başkalarının özel sohbetini dinleme.</li>
+      <li><b>Canlı çeviri kullandığını söyle.</b> Toplantının başında bir cümle yeter (aşağıda).</li>
+      <li>Bu uygulama <b>ses kaydetmez</b>. Konuşmayı yazıya telefonun kendi ses tanıma servisi (Android'de Google, iPhone'da Apple) çevirir; ses o sırada onların sunucusunda işlenebilir. Gizli bir görüşmede kullanmadan önce karşı tarafa sor.</li>`}
       <li>Telefonun ses tanıması sesi yazıya çevirir; yalnız yazı, çeviri için Claude'a gider.</li>
     </ul>
-    <div class="reply"><span class="tag br">İş arkadaşlarına söyle</span><div class="mid-nl" style="margin-top:4px">${esc(LV_CONSENT_NL)}</div>
-      <div class="okn small">meyn telefoon vertaalt vat er hızeht vort, zoodat ik ıt bıhreyp. is dat ookee?</div><div class="small">🇹🇷 Telefonum söylenenleri çeviriyor, anlayabileyim diye. Sorun olur mu?</div>
-      <div class="acts"><button class="ibtn" data-act="say" data-say="${esc(LV_CONSENT_NL)}" aria-label="Sesli oku">🔊</button><button class="ibtn" data-act="show" data-nl="${esc(LV_CONSENT_NL)}" data-tr="Telefonum söylenenleri çeviriyor, anlayabileyim diye. Sorun olur mu?" aria-label="Büyük göster">📢</button></div></div>
+    <div class="reply"><span class="tag br">${LVT.tellTag}</span><div class="mid-nl" style="margin-top:4px">${esc(LV_CONSENT_NL)}</div>
+      <div class="okn small">${esc(LVT.consent[1])}</div><div class="small">🇹🇷 ${esc(LVT.consent[2])}</div>
+      <div class="acts"><button class="ibtn" data-act="say" data-say="${esc(LV_CONSENT_NL)}" aria-label="Sesli oku">🔊</button><button class="ibtn" data-act="show" data-nl="${esc(LV_CONSENT_NL)}" data-tr="${esc(LVT.consent[2])}" aria-label="Büyük göster">📢</button></div></div>
     <div class="row" style="margin-top:14px"><button class="btn ghost" data-act="liveConsentNo">Vazgeç</button><button class="btn primary grow" data-act="liveConsentYes" data-start="${startAfter ? 1 : 0}">✅ Anladım${startAfter ? ", başla" : ""}</button></div></div>`;
   document.body.appendChild(d);
   d.addEventListener("click", e => { if (e.target === d) closeConsent(); });
@@ -360,7 +390,7 @@ ACT.liveResume = () => {
 ACT.liveRestart = () => { LIVE.err = null; liveStart(); };
 ACT.liveErrClose = () => { LIVE.err = null; setBanners(); };
 ACT.liveHintClose = () => { LIVE.hint = false; LIVE.heard = true; setBanners(); };
-ACT.liveTryNL = () => { store.set("srLang", "nl-NL"); toast("Hollanda Felemenkçesiyle dinliyorum"); if (lvActive()) { LIVE.userStop = true; try { LIVE.h.cancel(); } catch { } } setTimeout(liveStart, 300); };
+ACT.liveTryNL = () => { store.set("srLang", L.srAlt); toast(`${L.srAltAd}yle dinliyorum`); if (lvActive()) { LIVE.userStop = true; try { LIVE.h.cancel(); } catch { } } setTimeout(liveStart, 300); };
 ACT.livePauseClose = () => { LIVE.paused = null; setBanners(); setLiveBtn(lvActive()); };
 ACT.liveMore = () => { clearTimeout(LIVE.promptTimer); LIVE.prompt = false; LIVE.askAt = Date.now() + LIVE_PROMPT_MS; setBanners(); };
 ACT.liveSize = el => {
@@ -413,7 +443,7 @@ function pushCap(text, fill) {
     if (LIVE.caps.length === 1 && intro && intro.classList.contains("card") && lvOnScreen()) intro.remove();
     liveScroll(false, true);
   }
-  if (!fill && LIVE.nokey) { c.state = "ok"; c.local = true; } // anahtar yok: yalnız Felemenkçesi
+  if (!fill && LIVE.nokey) { c.state = "ok"; c.local = true; } // anahtar yok: yalnız hedef dildeki metin
   else if (!fill) { LIVE.queue.push(c); pumpLive(); }
   setStatus(); saveDraft();
 }

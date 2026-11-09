@@ -1,19 +1,23 @@
 /* Dil Köprüsü — dinleme merdiveni (kulak misafiri diyaloglar, minimal çiftler, hız basamakları) */
 "use strict";
 (function () {
-  const DIALOGS = () => Array.isArray(window.DIALOGS) ? window.DIALOGS : [];
-  const PAIRS = () => Array.isArray(window.PAIRS) ? window.PAIRS : [];
+  // İngilizcede yalnız content-en.js (window.EN) — eksik alan Felemenkçe içerikten sızmasın
+  const SRC = () => LANG === "en" ? (window.EN || {}) : window;
+  const DIALOGS = () => Array.isArray(SRC().DIALOGS) ? SRC().DIALOGS : [];
+  const PAIRS = () => Array.isArray(SRC().PAIRS) ? SRC().PAIRS : [];
   const HEARD_SRC = ["İşte duyduklarım", "Canlı altyazı"];
   const SPEEDS = [[0.8, "🐢 0.8"], [1, "1.0"], [1.15, "🐇 1.15"]];
   const LV = ["A1", "A2", "B1", "B2"];
-  const pz = s => typeof personalize === "function" ? personalize(String(s ?? "")) : String(s ?? "").replace(/\{NAAM\}/g, profile().name || "Oğuz");
+  const pz = s => typeof personalize === "function" ? personalize(String(s ?? "")) : String(s ?? "").replace(/\{NAAM\}/g, profile().name || L.defaultName);
 
   /* ---------------- Ses: konuşmacıya göre farklı ses/perde, sıralı çalma ---------------- */
   const LS = {
     tok: 0,
     speed() { const v = +store.get("lsSpeed", 1); return SPEEDS.some(s => s[0] === v) ? v : 1; },
     voiceFor(who) {
-      const all = TTS.nlVoices(); const main = TTS.pick("nl");
+      // yalnız öğrenilen dilin sesleri (core'daki liste başka dilde kalırsa İngilizce metni Felemenkçe ses okumasın)
+      const all = TTS.nlVoices().filter(v => String(v.lang || "").toLowerCase().startsWith(L.ttsBase));
+      const main = LANG === "nl" ? TTS.pick("nl") : (all.find(v => v.voiceURI === store.get("voice", "")) || all[0] || null);
       if (who !== "B") return { voice: main, pitch: 1, k: 1 };
       const other = all.find(v => main && v.voiceURI !== main.voiceURI);
       return other ? { voice: other, pitch: 1, k: 0.97 } : { voice: main, pitch: 1.3, k: 0.95 };
@@ -27,7 +31,7 @@
         const clean = String(text || "").replace(/[\[\]{}]/g, "").trim(); if (!clean) return res(true);
         const { voice, pitch, k } = this.voiceFor(who);
         const u = new SpeechSynthesisUtterance(clean);
-        if (voice) { u.voice = voice; u.lang = voice.lang; } else u.lang = "nl-BE";
+        if (voice) { u.voice = voice; u.lang = voice.lang; } else u.lang = L.sr;
         u.rate = Math.max(0.5, Math.min(1.6, (rate || this.speed()) * k)); u.pitch = pitch;
         let done = false; const fin = ok => { if (done) return; done = true; clearTimeout(t); res(ok); };
         u.onend = () => fin(true); u.onerror = () => fin(false);
@@ -175,11 +179,11 @@
     const st = store.get("pairStats", {});
     const tileBtn = (act, e, n, d, extra = "") => `<button class="tile" data-act="${act}" ${extra}><div class="e">${e}</div><div class="n">${n}</div><div class="small muted">${d}</div></button>`;
     return `<div class="card"><h2 style="margin:0 0 2px">🎧 Kulak eğitimi</h2>
-      <div class="small muted">İş yerinde yanında konuşulanı anlamak için: önce soruyu oku, sonra dinle.</div>
+      <div class="small muted">${L.belgium ? "İş yerinde yanında konuşulanı anlamak için" : "Toplantıda ve telefonda konuşulanı anlamak için"}: önce soruyu oku, sonra dinle.</div>
       <div style="margin-top:8px">${speedChips()}</div>
       <div class="grid2" style="margin-top:6px">
-        ${ds.length ? tileBtn("lsStartDlg", "🗣️", "Kulak misafiri", `${ds.length} iş diyaloğu · ${nDone} anlaşıldı`) : ""}
-        ${gs.length ? tileBtn("lsStartPair", "👂", "Ses çiftleri", "ui/eu, a/aa, g/h…") : ""}
+        ${ds.length ? tileBtn("lsStartDlg", "🗣️", "Kulak misafiri", `${ds.length} ${L.belgium ? "iş diyaloğu" : "diyalog"} · ${nDone} anlaşıldı`) : ""}
+        ${gs.length ? tileBtn("lsStartPair", "👂", "Ses çiftleri", L.belgium ? "ui/eu, a/aa, g/h…" : esc(gs.slice(0, 3).map(g => g.sound || g.id).join(", ")) + "…") : ""}
         ${tileBtn("lsStartHeard", "🏪", "İşte duyduklarım", heard.length ? `${heard.length} cümle · dinle + yaz` : "Canlı altyazıda ➕ ile biriktir")}
       </div>
       ${gs.length ? `<details style="margin-top:8px"><summary class="small">Belirli bir sesi çalış</summary><div class="chips" style="margin-top:6px;flex-wrap:wrap">${gs.map(g => { const x = st[g.id]; return `<button class="chip" data-act="lsStartPair" data-g="${esc(g.id)}">${esc(g.sound || g.id)}${x && x.n ? ` · %${Math.round(100 * x.ok / x.n)}` : ""}</button>`; }).join("")}</div></details>` : ""}
