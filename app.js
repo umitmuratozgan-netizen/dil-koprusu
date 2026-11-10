@@ -197,21 +197,27 @@ function tab(v) {
   }
   Back.reset();
   Speech.stopAll();
+  try { Turn.tok++; Spec.cancel(); if (Face.open) faceClose(true); } catch { } // v9: oto sıra zinciri sekme değişince sürmesin
   document.body.classList.remove("study");
   App.view = v; store.set("tab", v);
   $$("nav.tabs button").forEach(b => b.dataset.v === v ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
   $$("section.view").forEach(s => s.classList.toggle("on", s.id === "v-" + v));
   document.body.classList.toggle("interp", v === "ceviri");
-  if (v === "ceviri") Wake.on(); else Wake.off();
+  if (v === "ceviri") { Wake.on(); try { warmup(); } catch { } } else Wake.off(); // v9: ilk çeviri beklemesin
   ({ ogren: renderLearn, pratik: renderPractice, ceviri: renderInterp, yardim: renderHelp, ben: renderBen })[v]();
   window.scrollTo(0, 0);
 }
 
 /* ---------------- Tek tıklama yöneticisi ---------------- */
 const ACT = {};
+/** v9: bir düğmenin hatası uygulamayı kilitlemesin — kayda geç, kısa bildirim göster */
+function actFail(err, name) { try { if (typeof ErrLog !== "undefined" && ErrLog.add(err, "act:" + name)) toast("Bu işlem tamamlanamadı — tekrar dene"); } catch { } }
 document.addEventListener("click", e => {
   const el = e.target.closest("[data-act]"); if (!el) return;
-  const fn = ACT[el.dataset.act]; if (fn) { e.preventDefault(); fn(el, e); }
+  const name = el.dataset.act, fn = ACT[name]; if (!fn) return;
+  e.preventDefault();
+  try { const r = fn(el, e); if (r && typeof r.catch === "function") r.catch(err => actFail(err, name)); }
+  catch (err) { actFail(err, name); }
 });
 ACT.tab = el => tab(el.dataset.v);
 ACT.say = el => TTS.speak(el.dataset.say);
@@ -411,6 +417,7 @@ function renderLearnHome() {
   if (LANG === "en") return renderLearnHomeEN({ p, t, plan, planned, goal, rescueHtml, levelNode, lvIds, jobCats, mine });
   $("#v-ogren").innerHTML = `${installCard()}
     ${rescueHtml}
+    ${qaGrid()}
     <div class="card"><div class="hero">${ring(t.cards, goal)}
       <div class="grow"><h2 style="margin:0">Bugünün dersi</h2>
         <div class="small muted">${planned ? `${plan.due.length} tekrar · ${plan.fresh.length} yeni cümle${plan.gram ? " · 1 dilbilgisi" : ""}` : "Planlanan her şey bitti"}</div>
@@ -471,6 +478,7 @@ function renderLearnHomeEN({ p, t, plan, planned, goal, rescueHtml, levelNode, l
   }
   $("#v-ogren").innerHTML = `${installCard()}
     ${rescueHtml}
+    ${qaGrid()}
     <div class="card"><div class="hero">${ring(t.cards, goal)}
       <div class="grow"><h2 style="margin:0">Bugünün dersi</h2>
         <div class="small muted">${planned ? `${plan.due.length} tekrar · ${plan.fresh.length} yeni cümle${plan.gram ? " · 1 dilbilgisi" : ""}` : "Planlanan her şey bitti"}</div>
@@ -906,6 +914,7 @@ if (!CTXS.some(c => c[0] === App.interp.ctx)) App.interp.ctx = CTXS[0][0]; // ö
 // konuşma bağlamı: yalnız aynı durumda ve son 20 dakikadaki cümleler
 let conv = store.get("conv", []).filter(c => c && c.at && Date.now() - c.at < 20 * 60000);
 App.interp.live = store.get("interpLive", false);
+App.interp.auto = store.get("interpAuto", false); // v9: 🔁 oto sıra (dile göre)
 const thread = []; // bu oturumdaki baloncuklar (html) — sekme değişince kaybolmasın
 const redoMap = new Map();
 let bubSeq = 0;
@@ -926,11 +935,17 @@ function renderInterp() {
     <div class="ctxbar flat"><div class="seg" role="group" aria-label="Mod">${modeChips()}</div>
       <div class="row" style="margin-top:6px;gap:6px;flex-wrap:nowrap">${ctxSelect(ctx)}
       ${serious ? `<span class="chip" style="color:var(--danger)" title="Ciddi durumda en iyi model kullanılır">🛡️ En iyi</span>` : LANG === "en" ? "" : `<button class="chip" data-act="fastToggle" aria-pressed="${fast}">⚡ ${fast ? "Hızlı: açık" : "Hızlı: kapalı"}</button>`}
-      <button class="chip" data-act="newConv" aria-label="Yeni konuşma">🧹</button></div>${accentChips()}</div>
+      <button class="chip" data-act="newConv" aria-label="Yeni konuşma">🧹</button></div>
+      <div class="chips" role="group" aria-label="Konuşma biçimi" style="margin-top:6px"><button class="chip" data-act="autoTurn" aria-pressed="${!!App.interp.auto}" title="Sıra kendiliğinden döner: sen söyle → telefon söylesin → karşındakini dinlesin">🔁 Oto sıra</button><button class="chip" data-act="faceOpen" title="Telefonu aranıza koy: ekranın yarısı karşındakine dönük">🤝 Yüz yüze</button></div>${accentChips()}</div>
     ${serious ? (L.belgium ? `<div class="dangerbox" style="margin-bottom:10px">Önemli konularda (sağlık, hukuk, polis, para) profesyonel tercüman iste — polis ve mahkemede hakkındır; hastane ve kurumlarda genelde sosyal tercüman ayarlanabilir, sor: <b>“Ik wil graag een tolk.”</b> <button class="btn sm" data-act="say" data-say="${AT.tolk[0]}">🔊</button><br><span class="small">Sayı, tarih, doz ve tutarları mutlaka yazılı iste: “${AT.write}”</span></div>`
       : `<div class="dangerbox" style="margin-bottom:10px">Önemli konularda (sağlık, hukuk, para) mümkünse profesyonel tercüman iste: <b>“${AT.tolk[0]}”</b> <span class="small">(${AT.tolk[1]})</span> <button class="btn sm" data-act="say" data-say="${AT.tolk[0]}">🔊</button><br><span class="small">Sayı, tarih, doz ve tutarları mutlaka yazılı iste: “${AT.write}” <button class="btn sm" data-act="say" data-say="${AT.write}">🔊</button></span></div>`) : ""}
     ${!store.get("apiKey", "") && !DEMO ? `<div class="warnbox" style="margin-bottom:10px">Çeviri için bir kez API anahtarı gir. <button class="btn sm" data-act="goKey">Anahtarı gir</button><br><span class="small">Aşağıdaki hazır cümleler internetsiz de çalışır.</span></div>` : ""}
-    <div class="thread" id="thread" aria-live="polite">${thread.length ? thread.map(b => b.html).join("") : `<div class="card flat small muted" style="text-align:center">👇 Biri konuşunca <b>O konuşuyor</b>'a, sen bir şey söyleyeceksen <b>Ben söyleyeceğim</b>'e bas. Bitince aynı düğmeye tekrar bas.</div>`}</div>
+    <div class="thread" id="thread" aria-live="polite">${thread.length ? thread.map(b => b.html).join("") : `<div class="empty"><div class="e" aria-hidden="true">🎙️</div><h3>Konuşmaya hazır</h3>
+      <p>👂 <b>O konuşuyor</b> — karşındaki konuşsun, Türkçesi anında gelsin.</p>
+      <p>🗣️ <b>Ben söyleyeceğim</b> — Türkçe söyle, ${L.ad}sini büyük göstereyim.</p>
+      <p>🤝 <b>Yüz yüze</b> — telefonu aranıza koy, ikiniz de kendi dilinizde konuşun.</p>
+      <div class="row" style="justify-content:center;margin-top:12px"><button class="btn sm primary" data-act="faceOpen">🤝 Yüz yüze aç</button><button class="btn sm" data-act="typeOpen">⌨️ Yazarak çevir</button></div>
+      <p class="small" style="margin-top:8px">Bitince aynı düğmeye tekrar bas.</p></div>`}</div>
     <details class="card" style="margin-top:12px" id="typeBox"><summary>⌨️ Yazarak çevir</summary>
       <textarea id="typeIn" placeholder="${L.ad} ya da Türkçe yaz… (klavyedeki 🎤 ile de söyleyebilirsin)" style="margin-top:8px"></textarea>
       <div class="row" style="margin-top:8px"><button class="btn sm" data-act="typeIn" data-dir="in">${L.flag} → 🇹🇷 Anlamı</button><button class="btn sm" data-act="typeIn" data-dir="out">🇹🇷 → ${L.flag} Nasıl derim</button></div>
@@ -981,17 +996,299 @@ function setMicUI(dir, live) {
   b.classList.toggle("live", live); b.setAttribute("aria-pressed", String(live));
   b.querySelector(".sub").innerHTML = live ? `<span class="waves" aria-hidden="true"><i></i><i></i><i></i><i></i></span> ⏹ Bitir` : (dir === "in" ? `${L.ad} → Türkçe` : `Türkçe → ${L.ad}`);
 }
-ACT.mic = el => {
-  const dir = el.dataset.dir; const cur = Speech.cur;
-  if (cur && cur.owner === "interp-" + dir) { cur.stop(); return; } // aynı düğme: bitir ve çevir
-  if (cur) cur.cancel(); // diğer yöndeki dinlemeyi bırak, bu yöne geç
-  setMicUI("in", false); setMicUI("out", false); setMicUI(dir, true); haptic(20);
-  const live = $("#liveText"); live.classList.remove("hidden"); live.textContent = dir === "in" ? "Dinliyorum…" : "Türkçe söyle…";
-  Speech.listen({ lang: dir === "in" ? store.get("srLang", L.sr) : "tr-TR", owner: "interp-" + dir,
-    onText: t => { live.textContent = t; },
-    onDone: t => { setMicUI(dir, false); live.classList.add("hidden"); haptic(10); if (!t) { toast("Ses duyulmadı, tekrar dene"); return; } interpProcess(dir, t); },
-    onError: c => { setMicUI(dir, false); live.classList.add("hidden"); if (c !== "cancelled") { pushBubble(`<div class="bub">${errBox(Speech.errorText(c))}</div>`); } } });
+/* =================================================================
+   v9 — ışık hızı (hafıza + konuşurken çeviri), oto sıra, yüz yüze
+   ================================================================= */
+(function () { // yüz yüze + kendini sınama yerleşimi (yalnız tasarım değişkenleri)
+  if (document.getElementById("app9-css")) return;
+  const st = document.createElement("style"); st.id = "app9-css";
+  st.textContent = `
+#faceOv,#stOv{position:fixed;inset:0;z-index:65;background:var(--bg);display:none;flex-direction:column}
+#faceOv.on,#stOv.on{display:flex}
+#faceOv{padding:0;overflow:hidden}
+#stOv{padding:calc(14px + env(safe-area-inset-top)) 16px calc(14px + env(safe-area-inset-bottom));overflow:auto}
+.f2f-half{flex:1 1 0;min-height:0;display:flex;flex-direction:column;gap:8px;padding:14px 16px}
+.f2f-them{transform:rotate(180deg);background:var(--nl-soft);padding-bottom:calc(14px + env(safe-area-inset-top))}
+.f2f-me{background:var(--tr-soft);padding-bottom:calc(14px + env(safe-area-inset-bottom))}
+.f2f-txt{flex:1 1 0;min-height:0;overflow:auto;display:flex;text-align:center;font-weight:800;line-height:1.22;font-size:clamp(1.5rem,6.2vw,2.7rem);overflow-wrap:anywhere;color:var(--ink)}
+.f2f-txt>span{margin:auto;max-width:100%}
+.f2f-txt.long{font-size:clamp(1.15rem,4.6vw,1.9rem)}
+.f2f-txt.wait{color:var(--muted);font-weight:600;font-size:clamp(1.05rem,4.2vw,1.5rem)}
+.f2f-sub{min-height:1.3em;text-align:center;color:var(--muted);font-size:.95rem;overflow-wrap:anywhere}
+.f2f-warn{background:var(--danger-soft);color:var(--danger);border-radius:var(--r-sm);padding:8px 10px;font-size:.9rem;font-weight:700}
+.f2f-rep{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.f2f-rep .chip{max-width:78vw;overflow:hidden;text-overflow:ellipsis}
+.f2f-mic{align-self:center;flex:0 0 auto;display:inline-flex;align-items:center;gap:10px;min-height:60px;padding:0 30px;border:0;border-radius:999px;background:var(--grad);color:var(--brand-ink);font:inherit;font-weight:800;font-size:1.15rem;box-shadow:var(--shadow);cursor:pointer}
+.f2f-mic.live{background:var(--danger);animation:f2fPulse 1.4s var(--ease) infinite}
+@keyframes f2fPulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--danger) 45%,transparent)}50%{box-shadow:0 0 0 14px color-mix(in srgb,var(--danger) 0%,transparent)}}
+@media (prefers-reduced-motion:reduce){.f2f-mic.live{animation:none}}
+.f2f-bar{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--card);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.f2f-bar .f2f-stat{flex:1 1 auto;min-width:0;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+.st-row{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--line)}
+.st-row b{flex:1 1 auto;min-width:0}
+.st-row .small{text-align:right;overflow-wrap:anywhere}`;
+  document.head.appendChild(st);
+})();
+const BIZ_CTX = ["is", "toplanti", "resmi"]; // en: satış/uyum kuralı uyarısı (uyari_tr) bu durumlarda gelebilir
+const WAIT_TURN = "⏸ Sıra bekliyor — mikrofona dokun";
+
+/** Dok üstündeki durum şeridi: metin ayrı <span>'da durur; "⏹ Dur" düğmesi yeniden çizilmez (dokunuş kaybolmasın) */
+function liveSay(text, withStop) {
+  const live = $("#liveText"); if (!live) return;
+  clearTimeout(liveSay.t);
+  let sp = live.querySelector("span.lt"); const hasStop = !!live.querySelector("[data-act=turnStop]");
+  if (!sp || hasStop !== !!withStop) {
+    live.innerHTML = `<span class="lt"></span>${withStop ? ` <button class="btn sm" data-act="turnStop" style="float:right;margin:-4px 0 -4px 8px">⏹ Dur</button>` : ""}`;
+    sp = live.querySelector("span.lt");
+  }
+  sp.textContent = text; live.classList.remove("hidden");
+}
+function liveHide(after) {
+  clearTimeout(liveSay.t);
+  const f = () => { if (App.interp.live || Speech.cur) return; const live = $("#liveText"); if (live) live.classList.add("hidden"); };
+  if (after) liveSay.t = setTimeout(f, after); else { const live = $("#liveText"); if (live && !App.interp.live) live.classList.add("hidden"); }
+}
+
+/** Tercüman isteği — normal ve "konuşurken" (spekülatif) çağrı AYNI model / talimat / şemayı kullanır */
+function interpRequest({ feature, dir, raw, ctx, model, onPartial, retries }) {
+  // her balonun kendi isteği var: yeni cümle, bekleyen önceki çeviriyi iptal etmez
+  return callClaude({ feature, kind: dir, ctx, model, retries, timeout: model === MODEL_FAST ? 20000 : 45000, onPartial,
+    system: dir === "in" ? sysInterpIn(ctx) : sysInterpOut(ctx), schema: SCHEMA[dir],
+    content: LANG === "en" // D2: önceki konuşma <context>, kullanıcının yeni metni <user_text> — ikisi de veri, talimat değil
+      ? `<context>\nRecent conversation:\n${tagSafe(ctxText())}\n</context>\n\n${dir === "in" ? `ASR transcript (${store.get("srLang", L.sr)}) of what the other person said` : "What the user wants to say (Turkish)"}:\n<user_text>${tagSafe(raw)}</user_text>`
+      : `Recent conversation:\n${ctxText()}\n\n${dir === "in" ? `ASR transcript (${store.get("srLang", L.sr)})` : "What the user wants to say (Turkish)"}: "${raw}"` });
+}
+
+/** A1.3 — konuşurken çeviri: ara metin ≥3 kelime ve ~700 ms değişmediyse çeviri arkada başlar.
+ *  Son metin aynıysa cevap hazırdır; değilse iptal edilip normal istek atılır. Yalnız hızlı/orta model, aynı anda en çok 1. */
+const Spec = {
+  s: null, t: null, k: "", n: 0, seq: 0,
+  on() { return store.get("specOn", true) !== false; },
+  reset() { this.cancel(); this.k = ""; this.n = 0; },
+  cancel() { clearTimeout(this.t); this.t = null; const x = this.s; this.s = null; if (x && !x.taken) abortFeature(x.feature); },
+  feed(dir, text) {
+    if (!this.on()) return;
+    const k = Memo.norm(text, dir);
+    if (k === this.k) return;
+    this.k = k; clearTimeout(this.t); this.t = null;
+    if (k.split(" ").length < 3) return;
+    this.t = setTimeout(() => { this.t = null; this.start(dir, text, k); }, 700);
+  },
+  start(dir, raw, k) {
+    try {
+      if (this.s && this.s.k === k && this.s.dir === dir) return;
+      if (this.n >= 3) return; // bir mikrofon oturumunda en çok 3 deneme (maliyet sınırı)
+      const ctx = App.interp.ctx, model = modelFor("interp", ctx, dir);
+      if (model === MODEL_BEST) return; // ciddi durum / en iyi model: tahminle para ve zaman harcanmaz
+      if ((!DEMO && !store.get("apiKey", "")) || navigator.onLine === false) return;
+      if (Memo.has(dir, raw, ctx)) return; // zaten hafızada: anında gelecek
+      this.cancel(); this.n++;
+      const x = { dir, raw, k, ctx, model, feature: "spec:" + dir + ":" + (++this.seq), partial: "", onPartial: null, taken: false };
+      x.p = interpRequest({ feature: x.feature, dir, raw, ctx, model, retries: 0, onPartial: txt => { x.partial = txt; if (x.onPartial) x.onPartial(txt); } });
+      x.p.then(() => { }, () => { }); // sahiplenilmezse sessizce düşsün
+      this.s = x;
+    } catch { }
+  },
+  /** Son metin tahminle aynıysa süren isteği devral */
+  take(dir, raw, ctx) {
+    clearTimeout(this.t); this.t = null;
+    const x = this.s; this.s = null;
+    if (!x) return null;
+    if (x.dir === dir && x.ctx === ctx && x.k === Memo.norm(raw, dir)) { x.taken = true; return x; }
+    abortFeature(x.feature); return null;
+  }
 };
+
+/** A2.2 — 🔁 oto sıra: sen söyle → telefon söylesin → karşındakini dinlesin → çevirsin → yine sen. */
+const Turn = {
+  tok: 0, feat: "",
+  on() { return !!App.interp.auto; },
+  /** "Dur": dinleme, seslendirme, bekleyen çeviri ve zincir — hepsi kesilir */
+  halt() {
+    this.tok++;
+    const c = Speech.cur; if (c && /^(interp|face)-/.test(String(c.owner))) c.cancel();
+    TTS.stop(); Spec.cancel(); if (this.feat) { abortFeature(this.feat); this.feat = ""; }
+    liveHide(); if (Face.open) Face.stat("");
+  },
+  /** Sıradaki yönü dinlemeye başla (zincir hâlâ geçerliyse). → başladı mı */
+  next(dir, tok) {
+    if (tok !== this.tok || !this.on()) return false;
+    if (App.view !== "ceviri" || App.interp.live || document.hidden || Speech.cur) return false;
+    listenTurn(dir, { auto: true });
+    return !!Speech.cur;
+  }
+};
+ACT.autoTurn = () => {
+  App.interp.auto = !App.interp.auto; store.set("interpAuto", App.interp.auto); haptic(10);
+  if (!App.interp.auto) Turn.halt();
+  $$("[data-act=autoTurn]").forEach(b => b.setAttribute("aria-pressed", String(!!App.interp.auto)));
+  toast(App.interp.auto ? "🔁 Oto sıra açık — bir mikrofona dokun, sıra kendiliğinden döner" : "Oto sıra kapalı");
+};
+ACT.turnStop = () => { Turn.halt(); haptic(15); toast("Durduruldu — devam için mikrofona dokun"); };
+
+/** A2.3 — 🤝 yüz yüze: üst yarı karşıdakine dönük (180°), alt yarı sana */
+const FACE_T = LANG === "en"
+  ? { speak: "Speak", done: "Done", hint: "Tap the microphone and speak English.", wait: "Translating…", listen: "Listening…" }
+  : { speak: "Spreek", done: "Klaar", hint: "Tik op de microfoon en spreek Nederlands.", wait: "Vertalen…", listen: "Ik luister…" };
+const Face = {
+  open: false, last: null,
+  build() {
+    let o = $("#faceOv"); if (o) return o;
+    o = document.createElement("div"); o.id = "faceOv"; o.className = "fs-ov f2f";
+    o.setAttribute("role", "dialog"); o.setAttribute("aria-modal", "true"); o.setAttribute("aria-label", "Yüz yüze çeviri");
+    o.innerHTML = `
+      <div class="f2f-half f2f-them" lang="${LANG === "en" ? "en" : "nl"}">
+        <div class="f2f-txt wait" id="faceThem" aria-live="polite"><span></span></div>
+        <div class="f2f-sub" id="faceThemSub"></div>
+        <button class="f2f-mic" id="faceMicIn" data-act="faceMic" data-dir="in" aria-pressed="false"><span aria-hidden="true">🎤</span><span>${FACE_T.speak}</span></button>
+      </div>
+      <div class="f2f-bar" lang="tr">
+        <button class="btn sm" data-act="faceClose" aria-label="Yüz yüze ekranını kapat">✕</button>
+        <span class="f2f-stat small" id="faceStat" aria-live="polite"></span>
+        <button class="chip" data-act="autoTurn" aria-pressed="false">🔁 Oto sıra</button>
+        <button class="btn sm" data-act="faceSay" aria-label="Son cümleyi karşıya göster ve sesli söyle">🔊</button>
+      </div>
+      <div class="f2f-half f2f-me" lang="tr">
+        <div class="f2f-txt wait" id="faceMe" aria-live="polite"><span></span></div>
+        <div class="f2f-sub" id="faceMeSub"></div>
+        <div class="f2f-warn hidden" id="faceWarn" role="alert"></div>
+        <div class="f2f-rep hidden" id="faceReplies" role="group" aria-label="Hazır cevaplar"></div>
+        <button class="f2f-mic" id="faceMicOut" data-act="faceMic" data-dir="out" aria-pressed="false"><span aria-hidden="true">🎤</span><span>Konuş</span></button>
+      </div>`;
+    document.body.appendChild(o);
+    return o;
+  },
+  txt(id, text, wait) { const el = $("#" + id); if (!el) return; el.firstElementChild.textContent = text || ""; el.classList.toggle("wait", !!wait); el.classList.toggle("long", String(text || "").length > 110); el.scrollTop = 0; },
+  sub(id, text) { const el = $("#" + id); if (el) el.textContent = text || ""; },
+  stat(text) { this.sub("faceStat", text); },
+  warn(text) { const el = $("#faceWarn"); if (!el) return; el.textContent = text || ""; el.classList.toggle("hidden", !text); },
+  replies(list) {
+    const el = $("#faceReplies"); if (!el) return; const l = (list || []).filter(c => c && c.nl).slice(0, 2);
+    el.innerHTML = l.map(c => `<button class="chip" data-act="faceReply" data-nl="${esc(c.nl)}" data-tr="${esc(c.tr)}">💬 ${esc(c.tr || c.nl)}</button>`).join("");
+    el.classList.toggle("hidden", !l.length);
+  },
+  mic(dir, live) {
+    const b = $(dir === "in" ? "#faceMicIn" : "#faceMicOut"); if (!b) return;
+    b.classList.toggle("live", !!live); b.setAttribute("aria-pressed", String(!!live));
+    b.lastElementChild.textContent = live ? (dir === "in" ? FACE_T.done : "Bitir") : (dir === "in" ? FACE_T.speak : "Konuş");
+  },
+  reset() {
+    this.last = null; this.txt("faceThem", FACE_T.hint, true); this.txt("faceMe", "Mikrofona dokun ve Türkçe konuş.", true);
+    this.sub("faceThemSub", ""); this.sub("faceMeSub", ""); this.warn(""); this.stat(""); this.replies([]); this.mic("in", false); this.mic("out", false);
+  },
+  listening(dir) { this.stat(""); this.sub(dir === "in" ? "faceThemSub" : "faceMeSub", dir === "in" ? FACE_T.listen : "Dinliyorum… Türkçe söyle"); },
+  interim(dir, t) { if (t) this.sub(dir === "in" ? "faceThemSub" : "faceMeSub", t); },
+  idle(dir) { const id = dir === "in" ? "faceThemSub" : "faceMeSub", el = $("#" + id); if (el && /…/.test(el.textContent) && el.textContent.length < 30) el.textContent = ""; this.stat(WAIT_TURN); },
+  pending(dir, raw) {
+    this.replies([]); this.warn(""); this.stat("");
+    if (dir === "in") { this.sub("faceThemSub", raw); this.txt("faceMe", "Çeviriyorum…", true); this.sub("faceMeSub", ""); }
+    else { this.txt("faceMe", raw, false); this.sub("faceMeSub", ""); this.txt("faceThem", FACE_T.wait, true); this.sub("faceThemSub", ""); }
+  },
+  partial(dir, v) { this.txt(dir === "in" ? "faceMe" : "faceThem", v, false); },
+  showOut(nl) { this.txt("faceThem", nl, false); this.sub("faceThemSub", ""); },
+  result(dir, r, raw, warned) {
+    this.stat("");
+    if (dir === "in") {
+      this.sub("faceThemSub", r.duzeltilmis_nl || raw); this.txt("faceMe", r.ceviri_tr, false); this.sub("faceMeSub", r.niyet_tr ? "🎯 " + r.niyet_tr : "");
+      let acct = false; try { acct = LANG === "en" && scamSignals(raw + " " + r.duzeltilmis_nl).includes(ACCT_HIT); } catch { }
+      this.warn(r.onemli_uyari_tr ? "⚠️ " + r.onemli_uyari_tr : acct ? "⚠️ Hesap / ödeme bilgisi değişikliği gibi görünüyor — bilinen numaradan arayıp doğrulamadan işlem yapma." : "");
+      this.replies(r.cevaplar);
+    } else {
+      this.txt("faceMe", raw, false); this.sub("faceMeSub", r.tr_geri ? "↩︎ " + r.tr_geri : ""); this.replies([]);
+      this.last = { nl: r.nl, held: !!warned };
+      // satış kuralı uyarısı varsa cümle karşıya KENDİLİĞİNDEN gösterilmez / söylenmez — karar senin
+      if (warned) { this.txt("faceThem", "…", true); this.sub("faceThemSub", ""); this.warn("⚠️ " + r.uyari_tr + " — Yine de göstermek ve söylemek için 🔊'a dokun."); }
+      else { this.showOut(r.nl); this.warn(""); }
+    }
+  },
+  error(dir, msg) { this.txt(dir === "in" ? "faceMe" : "faceThem", "…", true); this.stat(msg ? "⚠️ " + msg : ""); }
+};
+function faceClose(fromBack) {
+  const o = $("#faceOv"); if (!o) return;
+  const c = Speech.cur; if (c && /^face-/.test(String(c.owner))) c.cancel();
+  Turn.tok++; TTS.stop(); Spec.cancel();
+  Face.open = false; o.classList.remove("on");
+  if (o.dataset.back) { delete o.dataset.back; if (!fromBack) Back.drop(); }
+}
+ACT.faceOpen = () => {
+  if (window.LiveUI && LiveUI.isActive && LiveUI.isActive()) { toast("Önce canlı altyazıyı durdur"); return; }
+  const wasLive = !!App.interp.live;
+  if (wasLive) { App.interp.live = false; store.set("interpLive", false); }
+  if (App.view !== "ceviri") tab("ceviri"); else if (wasLive) renderInterp();
+  if (App.view !== "ceviri") return;
+  if (Speech.cur) Speech.cur.cancel();
+  Turn.tok++;
+  const o = Face.build(); Face.reset();
+  $$("[data-act=autoTurn]").forEach(b => b.setAttribute("aria-pressed", String(!!App.interp.auto)));
+  o.classList.add("on"); Face.open = true; haptic(15);
+  if (!o.dataset.back) { o.dataset.back = "1"; Back.push(() => faceClose(true)); }
+  try { Wake.on(); warmup(); } catch { }
+};
+ACT.faceClose = () => faceClose();
+ACT.faceMic = el => listenTurn(el.dataset.dir);
+ACT.faceSay = () => {
+  const l = Face.last; if (!l || !l.nl) { toast("Önce bir cümle söyle"); return; }
+  if (l.held) { l.held = false; Face.showOut(l.nl); Face.warn(""); }
+  TTS.speak(l.nl);
+};
+/** Yüz yüzede hazır cevap çipi: karşıya büyük göster + söyle (oto sıradaysa sonra onu dinle) */
+ACT.faceReply = el => {
+  const nl = el.dataset.nl, tr = el.dataset.tr || ""; if (!nl) return;
+  if (Speech.cur) Speech.cur.cancel();
+  const tk = ++Turn.tok;
+  Face.last = { nl, held: false }; Face.showOut(nl); Face.txt("faceMe", tr || nl, false); Face.sub("faceMeSub", ""); Face.replies([]); Face.warn("");
+  conv.push({ d: "out", nl, ctx: App.interp.ctx, at: Date.now() }); conv = conv.slice(-8); store.set("conv", conv);
+  const cont = () => { Turn.next("in", tk); };
+  if (!TTS.speak(nl, { onEnd: cont })) cont();
+};
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  const st = $("#stOv");
+  if (st && st.classList.contains("on")) selfTestClose(); else if (Face.open) faceClose();
+});
+
+/** Tek mikrofon yolu: elle (dok düğmeleri), oto sıra ve yüz yüze aynı akışı kullanır.
+ *  Elle modda eskisi gibi: aynı düğmeye tekrar basınca biter. Oto sıra / yüz yüzede konuşma bitince kendiliğinden çevirir. */
+function listenTurn(dir, { auto = false } = {}) {
+  const face = Face.open, owner = (face ? "face-" : "interp-") + dir;
+  const cur = Speech.cur;
+  if (cur && cur.owner === owner) { if (!auto) cur.stop(); return; } // aynı düğme: bitir ve çevir
+  if (cur) cur.cancel(); // diğer yöndeki dinlemeyi bırak, bu yöne geç
+  ++Turn.tok; Spec.reset();
+  const hands = face || Turn.on();
+  const ui = on => { if (face) Face.mic(dir, on); else { if (on) { setMicUI("in", false); setMicUI("out", false); } setMicUI(dir, on); } };
+  const hint = dir === "in" ? "Dinliyorum…" : "Türkçe söyle…";
+  ui(true); haptic(20);
+  if (face) Face.listening(dir); else liveSay(hint, hands);
+  let got = "", endT = null, idleT = null, h = null;
+  const clear = () => { clearTimeout(endT); clearTimeout(idleT); };
+  const fin = () => { if (h && Speech.cur === h) h.stop(); };
+  if (hands) idleT = setTimeout(fin, 10000); // kimse konuşmadı: zincir nazikçe bekler
+  h = Speech.listen({ lang: dir === "in" ? store.get("srLang", L.sr) : "tr-TR", owner,
+    onText: t => {
+      if (face) Face.interim(dir, t); else liveSay(t || hint, hands);
+      if (t && t !== got) {
+        got = t; Spec.feed(dir, t);
+        if (hands) { clear(); endT = setTimeout(fin, 1800); } // konuşma bitti say: 1,8 sn sessizlik
+      }
+    },
+    onDone: t => {
+      clear(); ui(false); if (!face) liveHide(); haptic(10);
+      if (!t) {
+        Spec.cancel();
+        if (!hands) toast("Ses duyulmadı, tekrar dene");
+        else if (face) Face.idle(dir);
+        else { liveSay(WAIT_TURN, false); liveHide(6000); }
+        return;
+      }
+      interpProcess(dir, t, { face, turn: true });
+    },
+    onError: c => {
+      clear(); ui(false); if (!face) liveHide(); Spec.cancel();
+      if (c !== "cancelled") { if (face) Face.error(dir, Speech.errorText(c)); pushBubble(`<div class="bub">${errBox(Speech.errorText(c))}</div>`); }
+    } });
+}
+ACT.mic = el => listenTurn(el.dataset.dir);
 function pushBubble(html) { const id = "b" + (++bubSeq); thread.push({ id, html: `<div id="${id}">${html}</div>` }); if (App.view === "ceviri" && !App.interp.live) { const th = $("#thread"); if (th) { if (thread.length === 1) th.innerHTML = ""; th.insertAdjacentHTML("beforeend", thread[thread.length - 1].html); } scrollToBubble(id); } if (thread.length > 30) thread.shift(); return id; }
 function setBubble(id, html) { const b = thread.find(x => x.id === id); if (b) b.html = `<div id="${id}">${html}</div>`; const el = document.getElementById(id); if (el) el.innerHTML = html; }
 function ctxText() {
@@ -1005,25 +1302,69 @@ function partialField(txt, field) {
   if (!m) return "";
   try { return JSON.parse('"' + m[1].replace(/\\$/, "") + '"'); } catch { return m[1]; }
 }
-async function interpProcess(dir, raw, { forceBest = false, bubbleId } = {}) {
+/** Akan JSON'da bir alan TAMAMLANDIYSA değerini ver (A1.4: cümle biter bitmez seslendirme) */
+function doneField(txt, field) {
+  const m = String(txt).match(new RegExp('"' + field + '"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"\\s*[,}]'));
+  if (!m) return "";
+  try { return JSON.parse('"' + m[1] + '"'); } catch { return ""; }
+}
+/**
+ * Çeviri hattı. Sıra: ⚡ hafıza (anında) → konuşurken başlamış istek (devral) → normal istek.
+ * forceBest: en iyi modelle yeniden · fresh: hafızayı atla · face: yüz yüze ekranı · turn: mikrofondan geldi (oto sıra zinciri sürebilir)
+ */
+async function interpProcess(dir, raw, { forceBest = false, bubbleId, fresh = false, face = false, turn = false } = {}) {
   const ctx = App.interp.ctx; const serious = SERIOUS.has(ctx);
+  const t0 = performance.now(), tk = Turn.tok;
+  face = !!face && Face.open; turn = !!turn;
+  const strip = turn && Turn.on() && !face; // oto sırada dok üstünde durum şeridi
   const head = dir === "in" ? `<span class="tag nl">${L.flag} DUYULAN</span> <span class="mid-nl">${esc(raw)}</span>` : `<span class="tag tr">🇹🇷 SEN</span> <span>${esc(raw)}</span>`;
   const id = bubbleId || pushBubble("");
-  setBubble(id, `<div class="bub ${dir} prov">${head}<div class="big-tr partial" id="pt_${id}"></div><div class="skel" style="width:85%"></div><div class="skel" style="width:60%"></div>
-    <button class="btn sm" data-act="cancelReq" data-f="interp:${id}">Vazgeç</button></div>`);
-  scrollToBubble(id);
   const model = forceBest ? MODEL_BEST : modelFor("interp", ctx, dir); // D1: en iş/toplantı "out" → orta model
   const partialKey = dir === "in" ? "ceviri_tr" : "nl";
+  const hold = LANG === "en" && BIZ_CTX.includes(ctx); // satış kuralı uyarısı cümleden SONRA gelir: erken gösterme / söyleme yok
+  const speakOut = dir === "out" && (face || (turn && Turn.on()) || store.get("autoSay", false));
+  let spoken = false, src = "ai", hit = null, spec = null, feature = "interp:" + id;
+  const idleStrip = () => { if (strip && tk === Turn.tok) liveHide(); };
+  const sayOut = text => {
+    spoken = true; if (strip && tk === Turn.tok) liveSay("🔊 Söylüyorum…", true);
+    const cont = () => { if (!(turn && Turn.next("in", tk))) idleStrip(); };
+    if (!TTS.speak(text, { onEnd: cont })) cont();
+  };
+  const pend = () => {
+    setBubble(id, `<div class="bub ${dir} prov">${head}<div class="big-tr partial" id="pt_${id}"></div><div class="skel" style="width:85%"></div><div class="skel" style="width:60%"></div>
+    <button class="btn sm" data-act="cancelReq" data-f="${feature}">Vazgeç</button></div>`);
+    scrollToBubble(id);
+  };
+  if (!forceBest && !fresh) { try { hit = Memo.get(dir, raw, ctx); } catch { hit = null; } }
+  if (turn) { if (hit) Spec.cancel(); else spec = Spec.take(dir, raw, ctx); }
   try {
-    // her balonun kendi isteği var: yeni cümle, bekleyen önceki çeviriyi iptal etmez
-    const r = await callClaude({ feature: "interp:" + id, kind: dir, ctx, model, timeout: model === MODEL_FAST ? 20000 : 45000,
-      onPartial: txt => { const el = document.getElementById("pt_" + id); const v = partialField(txt, partialKey); if (el && v) el.textContent = v; },
-      system: dir === "in" ? sysInterpIn(ctx) : sysInterpOut(ctx), schema: SCHEMA[dir],
-      content: LANG === "en" // D2: önceki konuşma <context>, kullanıcının yeni metni <user_text> — ikisi de veri, talimat değil
-        ? `<context>\nRecent conversation:\n${tagSafe(ctxText())}\n</context>\n\n${dir === "in" ? `ASR transcript (${store.get("srLang", L.sr)}) of what the other person said` : "What the user wants to say (Turkish)"}:\n<user_text>${tagSafe(raw)}</user_text>`
-        : `Recent conversation:\n${ctxText()}\n\n${dir === "in" ? `ASR transcript (${store.get("srLang", L.sr)})` : "What the user wants to say (Turkish)"}: "${raw}"` });
-    redoMap.set(id, { dir, raw });
-    const redo = model === MODEL_FAST ? `<button class="btn sm ghost" data-act="redo" data-id="${id}">🔁 Emin değilim — daha iyi çeviri</button>` : "";
+    let r;
+    if (hit) { r = hit.r; src = hit.src; } // ⚡ anında: ağ yok, bekleme yok
+    else {
+      if (spec) { feature = spec.feature; src = "spec"; }
+      pend(); if (face) Face.pending(dir, raw); if (strip) liveSay("⏳ Çeviriyorum…", true);
+      if (turn) Turn.feat = feature;
+      const onPartial = txt => {
+        const v = partialField(txt, partialKey);
+        if (v) { const el = document.getElementById("pt_" + id); if (el) el.textContent = v; if (face && Face.open && !(dir === "out" && hold)) Face.partial(dir, v); }
+        if (speakOut && !spoken && !hold && tk === Turn.tok) { const full = doneField(txt, "nl"); if (full) sayOut(full); } // A1.4: kalan alanlar gelirken söylemeye başla
+      };
+      if (spec) {
+        spec.onPartial = onPartial; if (spec.partial) onPartial(spec.partial);
+        try { r = await spec.p; }
+        catch (e) { // tahmin isteği düştü: normal istekle devam (iptal ise iptal)
+          if (e && e.code === "abort") throw e;
+          src = "ai"; feature = "interp:" + id; if (turn) Turn.feat = feature; pend();
+          r = await interpRequest({ feature, dir, raw, ctx, model, onPartial });
+        }
+      } else r = await interpRequest({ feature, dir, raw, ctx, model, onPartial });
+      try { Memo.put(dir, raw, ctx, r); } catch { }
+    }
+    redoMap.set(id, { dir, raw, ctx });
+    const fastTag = hit ? `<span class="tag fast" title="Bu cümle hafızadan geldi">⚡ anında</span>` : "";
+    const redo = hit ? `<button class="btn sm ghost" data-act="redo" data-id="${id}" data-fresh="1">🔄 Yeniden çevir</button>`
+      : model === MODEL_FAST ? `<button class="btn sm ghost" data-act="redo" data-id="${id}">🔁 Emin değilim — daha iyi çeviri</button>` : "";
+    const foot = share => `<div class="row" style="margin-top:8px;gap:6px">${redo}<button class="btn sm ghost" data-act="shareTx" data-text="${esc(share)}">📤 Paylaş</button></div>`;
     const addOk = !serious;
     if (dir === "in") {
       conv.push({ d: "in", nl: r.duzeltilmis_nl, ctx, at: Date.now() }); hist({ d: "in", nl: r.duzeltilmis_nl, tr: r.ceviri_tr });
@@ -1035,7 +1376,7 @@ async function interpProcess(dir, raw, { forceBest = false, bubbleId } = {}) {
           ${acts(c.nl, c.tr, c.okunus, "Hayattan", { add: addOk, show: false })}</div>`;
       const top = r.cevaplar.slice(0, 2), more = r.cevaplar.slice(2);
       setBubble(id, `<div class="bub in">
-        <div class="row between"><span class="tag tr">🇹🇷 ANLAMI</span><span class="tag ${g[0]}">${g[1]}</span></div>
+        <div class="row between"><span class="tag tr">🇹🇷 ANLAMI</span><span>${fastTag} <span class="tag ${g[0]}">${g[1]}</span></span></div>
         <div class="big-tr" style="margin-top:6px">${esc(r.ceviri_tr)}</div>
         ${r.niyet_tr ? `<div class="note">🎯 ${esc(r.niyet_tr)}</div>` : ""}
         ${r.onemli_uyari_tr ? `<div class="dangerbox" style="margin-top:8px">⚠️ ${esc(r.onemli_uyari_tr)}</div>` : ""}
@@ -1048,13 +1389,12 @@ async function interpProcess(dir, raw, { forceBest = false, bubbleId } = {}) {
           ${r.notlar_tr ? `<div class="note">💡 ${esc(r.notlar_tr)}</div>` : ""}
           ${acts(r.duzeltilmis_nl, r.ceviri_tr, "", "Hayattan", { show: false, add: addOk })}
         </details>
-        ${redo}</div>`);
-      if (store.get("autoSpeak", false) && r.cevaplar[0]) TTS.speak(r.cevaplar[0].nl);
+        ${foot(r.duzeltilmis_nl + "\n🇹🇷 " + r.ceviri_tr)}</div>`);
     } else {
       conv.push({ d: "out", nl: r.nl, ctx, at: Date.now() }); hist({ d: "out", nl: r.nl, tr: raw });
       setBubble(id, `<div class="bub out">
         ${LANG === "en" ? salesWarn(r.uyari_tr) : ""}<span class="tag tr">🇹🇷 SEN</span> <span class="small">“${esc(raw)}”</span>
-        <div style="margin-top:8px"><span class="tag nl">${L.flag} ŞÖYLE DE</span></div>
+        <div style="margin-top:8px"><span class="tag nl">${L.flag} ŞÖYLE DE</span> ${fastTag}</div>
         <div class="tapzone" data-act="show" data-nl="${esc(r.nl)}" data-tr="${esc(r.tr_geri)}" data-ok="${esc(r.okunus)}">
           <div class="big-nl" style="margin-top:4px">${esc(r.nl)}</div><div class="okn" style="font-size:1.2rem">${esc(r.okunus)}</div></div>
         <div class="small">↩︎ Anlamı: ${esc(r.tr_geri)}</div>
@@ -1062,18 +1402,157 @@ async function interpProcess(dir, raw, { forceBest = false, bubbleId } = {}) {
         ${r.ipucu_tr ? `<div class="note">💡 ${esc(r.ipucu_tr)}</div>` : ""}
         ${r.alternatifler.length ? `<details style="margin-top:8px"><summary>🔁 Başka nasıl denir? (${r.alternatifler.length})</summary>${r.alternatifler.map(c => `<div class="reply"><span class="tag br">${esc(c.ton)}</span>
           <div class="mid-nl" style="margin-top:4px">${esc(c.nl)}</div><div class="okn small">${esc(c.okunus)}</div><div class="small">🇹🇷 ${esc(c.tr)}</div>${acts(c.nl, c.tr, c.okunus, "Hayattan", { add: addOk })}</div>`).join("")}</details>` : ""}
-        ${redo}</div>`);
+        ${foot(r.nl + "\n🇹🇷 " + (r.tr_geri || raw))}</div>`);
     }
     conv = conv.slice(-8); store.set("conv", conv);
     interpStreak();
     scrollToBubble(id);
+    try { Perf.add("interp:" + dir, performance.now() - t0, src); } catch { }
+    haptic(hit ? 8 : 12);
+    // ---- ses + sıra ----
+    if (dir === "in") {
+      if (face && Face.open) Face.result("in", r, raw);
+      const reply = store.get("autoSpeak", false) && r.cevaplar[0] ? r.cevaplar[0].nl : "";
+      const cont = () => { if (!(turn && Turn.next("out", tk))) idleStrip(); };
+      if (reply) { if (!TTS.speak(reply, { onEnd: cont })) cont(); } else cont();
+    } else {
+      const warned = !!(LANG === "en" && r.uyari_tr);
+      if (face && Face.open) Face.result("out", r, raw, warned);
+      if (speakOut && !spoken && !warned && tk === Turn.tok) sayOut(r.nl);
+      else if (!spoken && strip && tk === Turn.tok) { // söylenmedi: zincir burada bekler
+        if (warned) { liveSay("⚠️ Uyarıyı oku — söylemek için 🔊, devam için mikrofona dokun", false); liveHide(9000); } else liveHide();
+      }
+    }
   } catch (e) {
-    setBubble(id, e.code === "abort" ? `<div class="bub ${dir}">${head}<div class="small muted">İptal edildi.</div></div>` : `<div class="bub ${dir}">${head}${errBox(e)}<button class="btn sm" data-act="retry" data-id="${id}" data-dir="${dir}" data-raw="${esc(raw)}">↻ Tekrar dene</button></div>`);
+    const ab = !!(e && e.code === "abort");
+    setBubble(id, ab ? `<div class="bub ${dir}">${head}<div class="small muted">İptal edildi.</div></div>` : `<div class="bub ${dir}">${head}${errBox(e)}<button class="btn sm" data-act="retry" data-id="${id}" data-dir="${dir}" data-raw="${esc(raw)}">↻ Tekrar dene</button></div>`);
     scrollToBubble(id);
+    if (face && Face.open) Face.error(dir, ab ? "" : (e && e.message) || "Çeviri yapılamadı");
+    idleStrip();
+    if (!ab && !(e && e.code === "nokey")) try { ErrLog.add(e, "interp:" + dir); } catch { }
   }
 }
-ACT.redo = el => { const r = redoMap.get(el.dataset.id); if (r) interpProcess(r.dir, r.raw, { forceBest: true, bubbleId: el.dataset.id }); };
+ACT.redo = el => {
+  const r = redoMap.get(el.dataset.id); if (!r) return;
+  if (el.dataset.fresh) { try { Memo.drop(r.dir, r.raw, r.ctx != null ? r.ctx : App.interp.ctx); } catch { } interpProcess(r.dir, r.raw, { fresh: true, bubbleId: el.dataset.id }); } // ⚡ hafızayı atla, yeniden çevir
+  else interpProcess(r.dir, r.raw, { forceBest: true, bubbleId: el.dataset.id });
+};
 ACT.retry = el => interpProcess(el.dataset.dir, el.dataset.raw, { bubbleId: el.dataset.id });
+/** A2.5 — 📤 Paylaş: sistem paylaşımı (WhatsApp vb.), yoksa panoya kopyala. Kendiliğinden hiçbir yere gönderilmez. */
+ACT.shareTx = async el => {
+  const text = el.dataset.text || ""; if (!text) return;
+  if (navigator.share) {
+    try { await navigator.share({ text }); return; }
+    catch (e) { if (e && e.name === "AbortError") return; } // vazgeçti
+  }
+  try { await navigator.clipboard.writeText(text); toast("Kopyalandı 📋 — istediğin yere yapıştır"); }
+  catch { toast("Paylaşılamadı — metni basılı tutup kopyala"); }
+};
+/** A2.7 — öğrenme ana ekranının en üstündeki üç hızlı eylem */
+function qaGrid() {
+  return `<div class="qa-grid" role="group" aria-label="Hızlı eylemler">
+      <button class="qa" data-act="qaTalk"><span class="e" aria-hidden="true">🎙️</span><b class="n">Çevir</b><span class="d">konuş, anında çevir</span></button>
+      <button class="qa" data-act="goLive"><span class="e" aria-hidden="true">🎧</span><b class="n">Altyazı</b><span class="d">ortamı dinle</span></button>
+      <button class="qa" data-act="faceOpen"><span class="e" aria-hidden="true">🤝</span><b class="n">Yüz yüze</b><span class="d">ikiniz de konuşun</span></button></div>`;
+}
+ACT.qaTalk = () => {
+  if (!(window.LiveUI && LiveUI.isActive && LiveUI.isActive())) { App.interp.live = false; store.set("interpLive", false); }
+  tab("ceviri");
+};
+
+/* ---------------- A3.3 Teşhis + A3.4 kendini sınama ---------------- */
+function diagInfo() {
+  const p = Perf.summary(), last = Perf.list().slice(-1)[0];
+  let ch = 0; try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith("dk_")) ch += k.length + (localStorage.getItem(k) || "").length; } } catch { }
+  const sec = ms => (Math.max(0, ms) / 1000).toFixed(1).replace(".", ",") + " sn";
+  let voices = 0; try { voices = TTS.nlVoices().length; } catch { }
+  return [
+    ["Sürüm", "v" + (typeof APP_VERSION !== "undefined" ? APP_VERSION : "?")],
+    ["Dil", LANG === "en" ? "İngilizce" : "Felemenkçe"],
+    ["İnternet", navigator.onLine === false ? "çevrimdışı" : "çevrimiçi"],
+    ["API anahtarı", DEMO ? "demo (anahtarsız)" : store.get("apiKey", "") ? "var" : "yok"], // değeri ASLA gösterilmez
+    ["Konuşma tanıma", SR_CLASS ? "var" : "yok"],
+    ["Seslendirme", TTS.ok() ? `${voices} ${L.ad} ses` : "yok"],
+    ["Depolama", "≈ " + Math.round(ch * 2 / 1024) + " KB"],
+    ["Hız", p.n && last ? `son çeviri: ${sec(last.ms)} · ortalama ${sec(p.medAi || p.medAll)} · ⚡ hafızadan ${p.memo}${p.spec ? ` · 🚀 erken başlayan ${p.spec}` : ""}` : "henüz ölçüm yok"],
+    ["Çeviri hafızası", Memo.size() + " cümle"]
+  ];
+}
+function diagCard() {
+  let rows = [], errs = [];
+  try { rows = diagInfo(); errs = ErrLog.list(); } catch { }
+  const when = t => { try { return new Date(t).toLocaleString("tr-TR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); } catch { return ""; } };
+  return `<details class="card" id="diagBox"><summary>🩺 Teşhis <span class="small muted">— bir şey ters giderse buraya bak</span></summary>
+      <div style="margin-top:8px">${rows.map(([a, b]) => `<div class="kv"><span>${esc(a)}</span><b>${esc(b)}</b></div>`).join("")}</div>
+      <h3 style="margin-top:12px">Son hatalar</h3>
+      ${errs.length ? errs.slice(0, 5).map(e => `<div class="small" style="padding:6px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere"><b>${esc(when(e.t))}</b> · ${esc(e.where || "")}${e.n > 1 ? ` ×${e.n}` : ""}<br><span class="muted">${esc(e.msg || "")}</span></div>`).join("") : `<p class="small muted">Kayıtlı hata yok 🎉</p>`}
+      <div class="row" style="margin-top:10px"><button class="btn sm" data-act="diagCopy">📋 Raporu kopyala</button><button class="btn sm" data-act="selfTestRun">🩺 Kendini sına</button></div>
+      <div class="row" style="margin-top:8px"><button class="btn sm" data-act="diagClearErr">🧹 Hata kaydını temizle</button><button class="btn sm" data-act="diagClearMemo">⚡ Hafızayı temizle</button></div>
+      <p class="small muted" style="margin-top:8px">Rapor API anahtarını ve konuşma içeriğini içermez.</p>
+    </details>`;
+}
+function diagReport() {
+  const lines = ["Dil Köprüsü — teşhis raporu", new Date().toISOString()];
+  try { diagInfo().forEach(([a, b]) => lines.push(a + ": " + b)); } catch { }
+  lines.push("Cihaz: " + String(navigator.userAgent || "").slice(0, 160));
+  let errs = []; try { errs = ErrLog.list(); } catch { }
+  lines.push("Hatalar (" + errs.length + "):");
+  errs.slice(0, 15).forEach(e => lines.push("- " + new Date(e.t).toISOString() + " [" + (e.where || "") + "] " + (e.msg || "") + (e.n > 1 ? " ×" + e.n : "") + (e.v ? " (v" + e.v + ")" : "") + (e.stack ? " | " + e.stack : "")));
+  return ErrLog.mask(lines.join("\n"));
+}
+ACT.diagCopy = async () => { try { await navigator.clipboard.writeText(diagReport()); toast("Rapor kopyalandı 📋"); } catch { toast("Kopyalanamadı"); } };
+ACT.diagClearErr = () => { ErrLog.clear(); Perf.clear(); toast("Hata kaydı temizlendi"); if (App.view === "ben") { renderBen(); const d = $("#diagBox"); if (d) d.open = true; } };
+ACT.diagClearMemo = () => { const n = Memo.size(); Memo.clear(); toast(`⚡ Hafıza temizlendi (${n} cümle)`); if (App.view === "ben") { renderBen(); const d = $("#diagBox"); if (d) d.open = true; } };
+function selfTestClose(fromBack) {
+  const o = $("#stOv"); if (!o) return;
+  o.classList.remove("on");
+  if (o.dataset.back) { delete o.dataset.back; if (!fromBack) Back.drop(); }
+}
+ACT.selfTestClose = () => selfTestClose();
+ACT.selfTestRun = () => selfTest();
+/** ?selftest=1 — hiçbir ücretli çağrı yapmadan ana parçaları sınar. → { ok, results:[{name, ok, skip, note}] } */
+async function selfTest() {
+  if (selfTest.run) return selfTest.run;
+  let o = $("#stOv");
+  if (!o) { o = document.createElement("div"); o.id = "stOv"; o.className = "fs-ov"; o.setAttribute("role", "dialog"); o.setAttribute("aria-modal", "true"); o.setAttribute("aria-label", "Kendini sınama"); document.body.appendChild(o); }
+  o.innerHTML = `<div class="row between"><h2 style="margin:0">🩺 Kendini sınama</h2><button class="btn sm" data-act="selfTestClose" aria-label="Kapat">✕</button></div>
+    <p class="small muted">Ücretli çağrı yapılmaz; mikrofon açılmaz.</p><div id="stList"></div><p id="stSum" style="margin-top:12px;font-weight:700" aria-live="polite">Çalışıyor…</p>`;
+  o.classList.add("on");
+  if (!o.dataset.back) { o.dataset.back = "1"; Back.push(() => selfTestClose(true)); }
+  const results = [], list = $("#stList");
+  const row = (name, state, note) => {
+    results.push({ name, ok: state !== false, skip: state === null, note: note || "" });
+    if (list) list.insertAdjacentHTML("beforeend", `<div class="st-row"><span aria-hidden="true">${state === null ? "➖" : state ? "✅" : "❌"}</span><b>${esc(name)}</b><span class="small muted">${esc(note || "")}</span></div>`);
+  };
+  const step = async (name, fn) => {
+    try { const v = await fn(); if (v === false) row(name, false, ""); else if (v && v.skip) row(name, null, v.skip); else if (v && v.fail) row(name, false, v.fail); else row(name, true, typeof v === "string" ? v : ""); }
+    catch (e) { row(name, false, ErrLog.mask((e && e.message) || e).slice(0, 120)); }
+  };
+  selfTest.run = (async () => {
+    await step("İçerik yüklü", () => { const n = itemIndex().size; return n > 20 ? n + " cümle" : { fail: "içerik boş" }; });
+    await step("Depolama (yaz / oku)", () => { const k = "__st", v = { a: Date.now() }; const w = store.set(k, v); const g = store.get(k, null); store.del(k); return (w !== false && g && g.a === v.a) ? true : { fail: "yazılamadı" }; });
+    await step("Konuşma tanıma", () => SR_CLASS ? true : { fail: "bu tarayıcıda yok — Chrome kullan" });
+    await step("Seslendirme", () => TTS.ok() ? TTS.nlVoices().length + " " + L.ad + " ses" : { fail: "yok" });
+    await step("Çevrimdışı önbellek", () => location.protocol !== "https:" ? { skip: "yalnız https'te" } : (navigator.serviceWorker && navigator.serviceWorker.controller) ? true : { fail: "henüz etkin değil — sayfayı bir kez yenile" });
+    await step("Claude kitaplığı", async () => (await loadSDK()) ? true : false);
+    await step("API anahtarı", () => DEMO ? { skip: "demo" } : store.get("apiKey", "") ? "var" : { fail: "yok — Ben → 🔑" });
+    await step("Deneme çevirisi: duyulan → Türkçe", async () => { const r = postFix("in", fillDefaults(await demoAnswer("in"), SCHEMA.in)); return r && r.ceviri_tr && Array.isArray(r.cevaplar) ? true : false; });
+    await step("Deneme çevirisi: Türkçe → " + L.ad, async () => { const r = postFix("out", fillDefaults(await demoAnswer("out"), SCHEMA.out)); return r && r.nl && Array.isArray(r.alternatifler) ? true : false; });
+    await step("Çeviri hafızası (⚡)", () => {
+      const t = "öz sınama " + Math.random().toString(36).replace(/[^a-z]/g, "") + " deneme cümlesi", c = "__st";
+      const w = Memo.put("out", t, c, fillDefaults({ nl: "zelftest", tr_geri: "öz sınama" }, SCHEMA.out));
+      const h = Memo.has("out", t, c), g = Memo.get("out", "  " + t + " !", c); Memo.drop("out", t, c);
+      return (w && h && g && g.r.nl === "zelftest" && !Memo.has("out", t, c)) ? true : false;
+    });
+    await step("Hata kaydı ve hız ölçümü", () => (typeof ErrLog.add === "function" && typeof Perf.summary === "function") ? true : false);
+    const bad = results.filter(x => !x.ok).length, ok = bad === 0;
+    const sum = $("#stSum"); if (sum) sum.textContent = ok ? "✅ Hepsi tamam" : `❌ ${bad} sorun var — yukarıdaki kırmızı satırlara bak`;
+    selfTest.run = null;
+    return { ok, results };
+  })();
+  return selfTest.run;
+}
+window.selfTest = selfTest;
 function hist(h) { const l = store.get("hist", []); l.unshift({ ...h, at: Date.now() }); store.set("hist", l.slice(0, 40)); }
 
 /* =================================================================
@@ -1640,6 +2119,9 @@ function renderBen() {
       <label class="f" for="s_sr">Dinlenecek ${L.ad}</label>
       <select id="s_sr">${L.srOpts.map(([v, l]) => `<option value="${v}" ${store.get("srLang", L.sr) === v ? "selected" : ""}>${l}</option>`).join("")}</select>
       <label class="row small" style="margin-top:8px"><input type="checkbox" id="s_auto" ${store.get("autoSpeak", false) ? "checked" : ""}> İlk cevap önerisini otomatik sesli oku (önerilmez)</label>
+      <label class="row small" style="margin-top:8px"><input type="checkbox" id="s_say" ${store.get("autoSay", false) ? "checked" : ""}> <span>🔊 Çevirdiğim cümleyi otomatik sesli söyle</span></label>
+      <label class="row small" style="margin-top:8px"><input type="checkbox" id="s_spec" ${store.get("specOn", true) !== false ? "checked" : ""}> <span>⚡ Konuşurken çevirmeye başla (daha hızlı; biraz daha fazla kullanım)</span></label>
+      <label class="row small" style="margin-top:8px"><input type="checkbox" id="s_haptic" ${store.get("haptic", true) !== false ? "checked" : ""}> <span>📳 Titreşim</span></label>
       <label class="row small" style="margin-top:8px"><input type="checkbox" id="s_local" ${store.get("srLocal", false) ? "checked" : ""}> Ses tanımayı mümkünse telefonun içinde yap (destekleyen Android Chrome'da; ses dışarı gitmez) <button class="btn sm" data-act="checkLocal">Kontrol et</button></label>
       <div class="small" id="localOut" aria-live="polite"></div>
       <h3 style="margin-top:14px">💾 Yedek</h3>
@@ -1649,6 +2131,7 @@ function renderBen() {
       <div class="row" style="margin-top:8px"><button class="btn sm" data-act="resetProg">İlerlemeyi sıfırla</button><button class="btn sm" data-act="onbAgain">Tanıtımı tekrar göster</button></div>
     </details>
     ${EXT.benCards.map(f => { try { return f() || ""; } catch { return ""; } }).join("")}
+    ${diagCard()}
     <p class="small muted" style="text-align:center">Dil Köprüsü · v${typeof APP_VERSION !== "undefined" ? APP_VERSION : "7"}</p>`;
   const on = (id, fn) => { const el = $(id); if (el) el.onchange = fn; };
   on("#s_fast", e => store.set("fastI", e.target.checked));
@@ -1659,6 +2142,9 @@ function renderBen() {
   on("#s_theme", e => { store.set("theme", e.target.value); applyTheme(); });
   on("#s_open", e => store.set("openInterp", e.target.checked));
   on("#s_auto", e => store.set("autoSpeak", e.target.checked));
+  on("#s_say", e => store.set("autoSay", e.target.checked));
+  on("#s_spec", e => { store.set("specOn", e.target.checked); if (!e.target.checked) Spec.cancel(); });
+  on("#s_haptic", e => { store.set("haptic", e.target.checked); if (e.target.checked) haptic(15); });
   on("#s_local", e => store.set("srLocal", e.target.checked));
   const r = $("#s_rate"); if (r) r.oninput = e => { store.set("rate", +e.target.value); $("#rateVal").textContent = (+e.target.value).toFixed(2); };
   if (App.benFocusKey) { App.benFocusKey = false; setTimeout(() => { const k = $("#keyCard"); if (k) { k.scrollIntoView({ block: "center" }); $("#apiKey").focus(); } }, 50); }
@@ -1714,7 +2200,7 @@ ACT.wipeAll = async () => {
   location.replace(location.pathname);
 };
 ACT.resetProg = () => { if (confirm("Ders ilerlemesi, puan ve seri sıfırlansın mı? (Kaydettiklerin ve profilin kalır)")) { ["srs", "xp", "days", "today", "newToday", "cpBest", "gramDay", ...(LANG === "en" ? ["startDay", "gramSeen"] : [])].forEach(k => store.del(k)); App.renderStats(); renderBen(); toast("Sıfırlandı"); } };
-const LOG_KEYS = ["dk_hist", "dk_conv", "dk_liveLogs", "dk_liveDraft", "dk_en_hist", "dk_en_conv", "dk_en_liveLogs", "dk_en_liveDraft"];
+const LOG_KEYS = ["dk_hist", "dk_conv", "dk_liveLogs", "dk_liveDraft", "dk_en_hist", "dk_en_conv", "dk_en_liveLogs", "dk_en_liveDraft", "dk_memo", "dk_en_memo", "dk_errlog", "dk_perf"];
 ACT.export = () => {
   const withLogs = $("#exp_logs") && $("#exp_logs").checked;
   const data = {}; try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.startsWith("dk_") && k !== "dk_apiKey" && !k.startsWith("dk_bad_") && !k.startsWith("dk_en_bad_") && (withLogs || !LOG_KEYS.includes(k))) data[k] = localStorage.getItem(k); } } catch { }
@@ -1758,7 +2244,7 @@ function applyTheme() {
   const t = store.get("theme", "system"); const root = document.documentElement;
   if (t === "system") root.removeAttribute("data-theme"); else root.setAttribute("data-theme", t);
   const dark = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
-  $("#themeColor").setAttribute("content", dark ? "#0d1312" : "#0f766e");
+  $("#themeColor").setAttribute("content", dark ? "#090e14" : "#f2f4f7");
 }
 
 /* =================================================================

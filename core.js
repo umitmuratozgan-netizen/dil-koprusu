@@ -20,7 +20,7 @@ const typeOf = v => Array.isArray(v) ? "array" : v === null ? "null" : typeof v;
 let quotaWarned = false;
 /* Her öğrenilen dilin ilerlemesi ayrı: Felemenkçe eski "dk_" önekinde kalır (mevcut veriler bozulmaz), İngilizce "dk_en_".
    Bu anahtarlar iki dilde ortaktır (anahtar, görünüm, ayarlar, harcama sayacı). */
-const STORE_SHARED = new Set(["apiKey", "lang", "theme", "fontScale", "installed", "hideInstall", "fastI", "fastP", "liveModel", "usage", "srLocal", "rate"]);
+const STORE_SHARED = new Set(["apiKey", "lang", "theme", "fontScale", "installed", "hideInstall", "fastI", "fastP", "liveModel", "usage", "srLocal", "rate", "errlog", "perf", "specOn", "haptic"]);
 const SK = k => (typeof LANG !== "undefined" && LANG !== "nl" && !STORE_SHARED.has(k) ? "dk_" + LANG + "_" : "dk_") + k;
 const store = {
   /** Bozuk JSON: ham değer dk_bad_<k>'ya yedeklenir, varsayılan döner. Tür varsayılanla uyuşmazsa varsayılan döner. */
@@ -37,22 +37,111 @@ const store = {
     if (d != null && typeOf(v) !== typeOf(d)) return d;
     return v;
   },
+  /** v9: kota dolarsa yeniden üretilebilir listeler (çeviri hafızası, geçmiş, canlı taslak) yarıya iner ve BİR kez daha denenir. İmza aynı: true/false. */
   set(k, v) {
-    try { localStorage.setItem(SK(k), JSON.stringify(v)); return true; }
-    catch (e) {
-      const quota = e && (e.name === "QuotaExceededError" || e.code === 22 || e.code === 1014 || /quota/i.test(String(e.message)));
-      if (quota && !quotaWarned) { quotaWarned = true; try { toast("Telefon hafızası dolu — Ben → Yedek al"); } catch { } }
-      return false;
+    let str;
+    try { str = JSON.stringify(v); } catch { return false; }
+    for (let pass = 0; pass < 2; pass++) {
+      try { localStorage.setItem(SK(k), str); return true; }
+      catch (e) {
+        const quota = e && (e.name === "QuotaExceededError" || e.code === 22 || e.code === 1014 || /quota/i.test(String(e.message)));
+        if (quota && pass === 0 && storePrune()) continue;
+        if (quota && !quotaWarned) {
+          quotaWarned = true;
+          try { toast("Telefon hafızası dolu — Ben → Yedek al"); } catch { }
+          try { ErrLog.add(e, "store:" + k); } catch { }
+        }
+        return false;
+      }
     }
+    return false;
   },
   del(k) { try { localStorage.removeItem(SK(k)); } catch { } }
 };
+/** Kota dolunca yer aç: en yeni yarı kalır (memo/hist en yeni başta; canlı taslakta son satırlar). → yer açıldı mı */
+function storePrune() {
+  let freed = false;
+  ["memo", "hist", "liveDraft", "perf", "errlog"].forEach(k => {
+    try {
+      const raw = localStorage.getItem(SK(k)); if (!raw) return;
+      const v = JSON.parse(raw);
+      if (Array.isArray(v) && v.length > 1) { localStorage.setItem(SK(k), JSON.stringify(k === "perf" ? v.slice(-Math.ceil(v.length / 2)) : v.slice(0, Math.ceil(v.length / 2)))); freed = true; }
+      else if (v && Array.isArray(v.caps) && v.caps.length > 1) { v.caps = v.caps.slice(-Math.ceil(v.caps.length / 2)); localStorage.setItem(SK(k), JSON.stringify(v)); freed = true; }
+    } catch { }
+  });
+  try { if (freed && typeof Memo !== "undefined") Memo._l = null; } catch { }
+  return freed;
+}
 let toastTimer;
 function toast(msg) { const t = $("#toast"); if (!t) return; t.textContent = msg; t.classList.add("on"); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("on"), 2600); }
-function haptic(p = 15) { try { navigator.vibrate && navigator.vibrate(p); } catch { } }
+function haptic(p = 15) { try { if (store.get("haptic", true) && navigator.vibrate && !(navigator.userActivation && !navigator.userActivation.hasBeenActive)) navigator.vibrate(p); } catch { } }
 /** v8.3 (en, D2): <context>/<user_text> içine giren metin etiketi kapatıp "talimat" ekleyemesin (</context> enjeksiyonu) */
 const tagSafe = s => String(s ?? "").replace(/<\/?\s*(context|user_text)\s*>/gi, " ");
 window.tagSafe = tagSafe;
+
+/* ---------------- v9: hata günlüğü + hız ölçümü (cihazda kalır, hiçbir yere gönderilmez) ---------------- */
+const ErrLog = {
+  _busy: false, _toastAt: 0,
+  /** Anahtar benzeri metinler maskelenir; iptaller (abort) kayda girmez. */
+  mask(x) { return String(x == null ? "" : x).replace(/sk-ant-[A-Za-z0-9_\-]+/g, "sk-ant-…"); },
+  isAbort(e) {
+    if (!e) return false;
+    const n = String(e.name || ""), m = String(e.message || (typeof e === "string" ? e : ""));
+    return e.code === "abort" || /Abort/i.test(n) || /\baborted\b|AbortError|Request was aborted/i.test(m);
+  },
+  add(e, where) {
+    if (this._busy || this.isAbort(e)) return false;
+    this._busy = true;
+    try {
+      const msg = this.mask(e && e.message != null ? e.message : e).slice(0, 200);
+      if (!msg || /ResizeObserver loop/i.test(msg)) return false;
+      const stack = this.mask(e && e.stack ? String(e.stack).split("\n").slice(1, 4).map(x => x.trim()).join(" | ") : "").slice(0, 300);
+      const l = store.get("errlog", []); const w = String(where || "").slice(0, 60);
+      const last = l[0];
+      if (last && last.msg === msg && last.where === w && Date.now() - last.t < 60000) { last.n = (last.n || 1) + 1; last.t = Date.now(); }
+      else l.unshift({ t: Date.now(), msg, where: w, stack, v: typeof APP_VERSION !== "undefined" ? String(APP_VERSION) : "" });
+      store.set("errlog", l.slice(0, 30));
+      return true;
+    } catch { return false; } finally { this._busy = false; }
+  },
+  /** En fazla 15 saniyede bir kısa bildirim */
+  notify() {
+    const now = Date.now(); if (now - this._toastAt < 15000) return;
+    this._toastAt = now; try { toast("Küçük bir hata oldu — devam edebilirsin"); } catch { }
+  },
+  list() { const l = store.get("errlog", []); return Array.isArray(l) ? l : []; },
+  clear() { store.del("errlog"); }
+};
+window.ErrLog = ErrLog;
+window.addEventListener("error", ev => {
+  try { if (!ev || (!ev.error && !ev.message)) return; if (ErrLog.add(ev.error || ev.message, "window")) ErrLog.notify(); } catch { }
+});
+window.addEventListener("unhandledrejection", ev => {
+  try {
+    const r = ev && ev.reason; if (!r || ErrLog.isAbort(r)) return;
+    const quiet = (typeof UserError !== "undefined" && r instanceof UserError) || /NotAllowed|NotSupported|NotFound/i.test(String(r.name || ""));
+    if (ErrLog.add(r, "promise") && !quiet) ErrLog.notify();
+  } catch { }
+});
+/** Perf.add(kind, ms, src): son 50 ölçüm. src: "ai" | "memo" | "spec" | "icerik" */
+const Perf = {
+  add(kind, ms, src) {
+    try {
+      const l = store.get("perf", []);
+      l.push({ k: String(kind || ""), ms: Math.max(0, Math.round(+ms || 0)), s: String(src || "ai"), t: Date.now() });
+      store.set("perf", l.slice(-50));
+    } catch { }
+  },
+  list() { const l = store.get("perf", []); return Array.isArray(l) ? l : []; },
+  /** → { n, memo, spec, ai, medAi, medAll } (ms; ölçüm yoksa 0) */
+  summary() {
+    const l = this.list(); const med = a => { if (!a.length) return 0; const b = a.slice().sort((x, y) => x - y); return b[Math.floor(b.length / 2)]; };
+    const instant = l.filter(x => x.s === "memo" || x.s === "icerik"), spec = l.filter(x => x.s === "spec"), ai = l.filter(x => x.s === "ai");
+    return { n: l.length, memo: instant.length, spec: spec.length, ai: ai.length, medAi: med(ai.map(x => x.ms)), medSpec: med(spec.map(x => x.ms)), medAll: med(l.map(x => x.ms)) };
+  },
+  clear() { store.del("perf"); }
+};
+window.Perf = Perf;
 function lev(a, b) {
   if (a === b) return 0; if (!a.length) return b.length; if (!b.length) return a.length;
   let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
@@ -420,7 +509,7 @@ const Speech = {
    - Ekran kapanınca/arka plana geçince duraklar (onStatus("paused")); .resume() ile devam.
    - .mute(true/false): susturulmuşken duyulan metin atılır (TTS yankısı). TTS.speak bunu kendisi yapar.
    - onStatus: "listening" | "reconnecting" | "paused" | "silence" | "stopped". onEnd(reason): "user" | "silence" | "max". */
-Speech.live = function ({ lang, onInterim = () => { }, onFinal = () => { }, onEnd = () => { }, onError = () => { }, onStatus = () => { }, maxMs = 30 * 60000, silenceMs = 120000, autoResume = false, maxRetryMs = 0 } = {}) {
+Speech.live = function ({ lang, onInterim = () => { }, onFinal = () => { }, onEnd = () => { }, onError = () => { }, onStatus = () => { }, maxMs = 30 * 60000, silenceMs = 120000, autoResume = false, maxRetryMs = 0, track = null } = {}) {
   if (!SR_CLASS) { onError("nosupport"); return null; }
   if (this.cur) this.cur.cancel();
   TTS.stop();
@@ -562,6 +651,11 @@ Speech.live = function ({ lang, onInterim = () => { }, onFinal = () => { }, onEn
   };
   const run = () => {
     if (ended || paused) return;
+    // v9: ses kaynağı bir MediaStreamTrack ise (sekme/ekran sesi) — iz bittiyse oturum biter; tarayıcı desteklemiyorsa sessizce mikrofona DÜŞMEZ
+    if (track) {
+      if (track.readyState !== "live") { try { rec && rec.abort(); } catch { } return finish("track-ended"); }
+      if (!Speech.trackOk()) return fail("track-unsupported");
+    }
     done = []; stab = []; sessEmits = 0; gotResult = false; gotAudio = false; lastConf = 0;
     let r;
     try { r = new SR_CLASS(); } catch { return fail("start"); }
@@ -574,8 +668,13 @@ Speech.live = function ({ lang, onInterim = () => { }, onFinal = () => { }, onEn
     r.onerror = e => { if (rec === r) handleError(e.error); };
     r.onend = () => { if (rec === r) handleEnd(); };
     runAt = Date.now();
-    try { r.start(); running = true; }
-    catch { running = false; emptyRuns++; fastFails++; if (fastFails >= 8) fail("start"); else scheduleRestart(); }
+    try { if (track) r.start(track); else r.start(); running = true; }
+    catch (e) {
+      running = false;
+      if (track && track.readyState !== "live") return finish("track-ended");
+      if (track && (e instanceof TypeError || /NotSupported|TypeError/i.test(String((e && e.name) || "")))) return fail("track-unsupported");
+      emptyRuns++; fastFails++; if (fastFails >= 8) fail("start"); else scheduleRestart();
+    }
   };
   const h = {
     owner: "live",
@@ -612,8 +711,19 @@ Speech.live = function ({ lang, onInterim = () => { }, onFinal = () => { }, onEn
   const cap = setTimeout(() => h.stop("max"), maxMs);
   const silenceTimer = setInterval(() => { if (!ended && !paused && Date.now() - lastFinalAt > silenceMs) h.stop("silence"); }, 5000);
   this.cur = h;
+  if (track && typeof track.addEventListener === "function") track.addEventListener("ended", () => { if (!finished) { try { rec && rec.abort(); } catch { } finish("track-ended"); } }, { once: true });
   run();
   return h;
+};
+/** v9: SpeechRecognition.start(MediaStreamTrack) destekleniyor mu? Destekleyen tarayıcı geçersiz parametrede TypeError atar;
+    desteklemeyen parametreyi yok sayıp mikrofonu açar (hemen kapatılır). Sonuç saklanır; yalnız track verilince yoklanır. */
+Speech.trackOk = function () {
+  if (this._trackOk != null) return this._trackOk;
+  if (!SR_CLASS || typeof MediaStreamTrack === "undefined") return (this._trackOk = false);
+  let ok = false;
+  try { const p = new SR_CLASS(); p.onerror = () => { }; p.onend = () => { }; p.start(0); try { p.abort(); } catch { } }
+  catch (e) { ok = e instanceof TypeError; }
+  return (this._trackOk = ok);
 };
 // Ekran kilitlenince / başka uygulamaya geçince: canlı altyazı duraklar, tek seferlik dinleme duyduğunu verir
 document.addEventListener("visibilitychange", () => {
@@ -651,6 +761,20 @@ function loadSDK() {
   if (!sdkPromise) sdkPromise = import(SDK_URL).then(m => m.default || m.Anthropic).catch(e => { sdkPromise = null; throw e; });
   return sdkPromise;
 }
+/* v9: anahtar başına TEK istemci (her istekte yeniden kurulmaz); deneme sayısı istek seçeneğiyle verilir */
+let _client = null, _clientKey = "", _clientCtor = null;
+function getClient(Anthropic, key) {
+  if (!_client || _clientKey !== key || _clientCtor !== Anthropic) { _client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true, maxRetries: 0 }); _clientKey = key; _clientCtor = Anthropic; }
+  return _client;
+}
+/** warmup(): SDK'yı önceden yükle + istemciyi kur. Ağ isteği atmaz, tekrar çağrılabilir. → Promise<boolean> */
+let _warm = null;
+function warmup() {
+  if (DEMO) return Promise.resolve(false);
+  if (!_warm) _warm = loadSDK().then(A => { const key = store.get("apiKey", ""); if (key) getClient(A, key); return true; }).catch(() => { _warm = null; return false; });
+  return _warm;
+}
+window.warmup = warmup;
 const SERIOUS = new Set(L.serious);
 /** Hangi özellik hangi modeli kullanır. Tercüman ve pratikte varsayılan ⚡ hızlı model (Haiku, ~1–2 sn); kullanıcı kapatabilir. Ciddi durumlarda ve belgelerde en iyi model. */
 function modelFor(feature, ctx, kind) {
@@ -777,16 +901,16 @@ async function callClaude({ feature, kind, system, content, schema, ctx, timeout
     if (!key) { const e = new UserError(`Bunun için Claude API anahtarı gerekiyor: Ben → 🔑 Claude API anahtarı.${L.belgium ? " (Kurulumu yapan ağabeyin girebilir.)" : ""}`, "nokey", "no API key stored on this device (Ben → 🔑)"); e.setup = true; throw e; }
     let Anthropic;
     try { Anthropic = await loadSDK(); } catch (e) { throw friendlyError(e); }
-    const client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true, maxRetries: retries, timeout });
+    const client = getClient(Anthropic, key);
     const m = model || modelFor(feature, ctx, kind);
     const messages = [{ role: "user", content }];
     const oc = withSchema => { const o = {}; if (effort && !API_FLAGS.noEffort.has(m)) o.effort = effort; if (withSchema) o.format = { type: "json_schema", schema }; return Object.keys(o).length ? o : undefined; };
-    const opts = { signal: ctrl.signal, timeout };
+    const opts = { signal: ctrl.signal, timeout, maxRetries: retries };
     // Haiku: kısa çeviri işlerinde "düşünme" adımını kapat → çok daha hızlı cevap
     const lowEff = !effort || effort === "low" || effort === "medium";
     const thk = () => API_FLAGS.noThinkOff.has(m) || !lowEff ? {} : m.startsWith("claude-haiku") ? { thinking: { type: "disabled" } } : m.startsWith("claude-sonnet-5-5") ? { thinking: { type: "between_tools" } } : {};
-    // en: sabit sistem talimatı önbelleğe (aynı özellikte art arda çağrılarda giriş maliyeti ~%90 düşer)
-    const sys = txt => LANG === "en" && !API_FLAGS.noCache ? [{ type: "text", text: txt, cache_control: { type: "ephemeral" } }] : txt;
+    // sabit sistem talimatı önbelleğe (aynı özellikte art arda çağrılarda giriş maliyeti ~%90 düşer, ilk harf daha erken gelir). v9: nl için de.
+    const sys = txt => !API_FLAGS.noCache ? [{ type: "text", text: txt, cache_control: { type: "ephemeral" } }] : txt;
     // 1) Opus: reddedilirse sunucu tarafında yedek modele geçiş; 2) düz istek; 3) şemasız, metinle JSON
     const attempts = [];
     if (m.startsWith("claude-opus") && !API_FLAGS.noFallback) attempts.push({ id: "fallback", beta: true, params: () => ({ model: m, max_tokens: maxTokens, system: sys(system), messages, output_config: oc(true), betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" }) });
@@ -811,7 +935,7 @@ async function callClaude({ feature, kind, system, content, schema, ctx, timeout
     };
     let last;
     for (const a of attempts) {
-      for (let again = 0; again < (LANG === "en" ? 4 : 2); again++) { // en: effort / düşünme / önbellek bayrakları sırayla düşebilir
+      for (let again = 0; again < 4; again++) { // en: effort / düşünme / önbellek bayrakları sırayla düşebilir
         try {
           const msg = await send(a);
           try { Usage.add(feature, msg.model || m, msg.usage); } catch { }
@@ -825,7 +949,7 @@ async function callClaude({ feature, kind, system, content, schema, ctx, timeout
           if (!(e && e.status === 400) || /credit balance|usage limit|spend(ing)? limit/i.test(em)) throw friendlyError(e);
           if (/effort|output_config/i.test(em) && effort && !API_FLAGS.noEffort.has(m)) { API_FLAGS.noEffort.add(m); continue; } // aynı biçimi effort'suz dene
           if (/thinking/i.test(em) && !API_FLAGS.noThinkOff.has(m) && /^claude-(haiku|sonnet)/.test(m)) { API_FLAGS.noThinkOff.add(m); continue; } // düşünmeyi kapatmak kabul edilmedi: açık haliyle dene
-          if (/cache_control/i.test(em) && !API_FLAGS.noCache && LANG === "en") { API_FLAGS.noCache = true; continue; } // önbellek reddedildi: düz metin sistemle dene
+          if (/cache_control/i.test(em) && !API_FLAGS.noCache) { API_FLAGS.noCache = true; continue; } // önbellek reddedildi: düz metin sistemle dene
           if (a.id === "fallback" && /fallback|beta/i.test(em)) API_FLAGS.noFallback = true;
           if (!isShapeError(em)) throw friendlyError(e); // biçimle ilgisi olmayan 400: zinciri sürdürme
           break; // sıradaki biçimi dene
@@ -837,6 +961,98 @@ async function callClaude({ feature, kind, system, content, schema, ctx, timeout
     if (inflight.get(feature) === ctrl) inflight.delete(feature);
   }
 }
+/* ---------------- v9: çeviri hafızası (⚡ anında) ----------------
+   Memo.get(dir, text, ctx) → { r, src } | null    src: "memo" (daha önce çevrildi) | "icerik" (hazır cümle, tam eşleşme)
+   Memo.put(dir, text, ctx, r): başarılı cevabı sakla. Uyarılı cevaplar (önemli uyarı, satış kuralı, hesap/ödeme alarmı) SAKLANMAZ.
+   Kayıt: { k, dir, ctx, r, at, n } — dil başına, en yeni başta, en çok 300. Ciddi durumda 30 günden eski kayıt kullanılmaz. */
+const MEMO_MAX = 300, MEMO_SERIOUS_MS = 30 * 86400000;
+const Memo = {
+  _l: null, _saveT: null, _idx: null, _idxAt: 0,
+  norm(text, dir) {
+    let t = String(text == null ? "" : text);
+    try { t = t.toLocaleLowerCase(dir === "out" ? "tr" : LANG === "en" ? "en" : "nl"); } catch { t = t.toLowerCase(); }
+    return t.replace(/['’‘`´]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  },
+  list() {
+    if (!this._l) { const l = DEMO ? [] : store.get("memo", []); this._l = Array.isArray(l) ? l.filter(x => x && x.k && x.r && typeof x.r === "object") : []; }
+    return this._l;
+  },
+  save(now) {
+    const w = () => { this._saveT = null; if (!this._l || DEMO) return; if (!store.set("memo", this._l)) { this._l = this._l.slice(0, Math.ceil(this._l.length / 2)); store.set("memo", this._l); } };
+    clearTimeout(this._saveT);
+    if (now) w(); else this._saveT = setTimeout(w, 800);
+  },
+  /** Hazır içerik cümleleri (dersler, defter, hazır cümleler): normalleştirilmiş tam eşleşme */
+  index() {
+    if (this._idx && Date.now() - this._idxAt < 60000) return this._idx;
+    const nl = new Map(), tr = new Map();
+    const put = (a, b, ok) => {
+      if (!a || !b) return; const it = { nl: String(a), tr: String(b), ok: String(ok || "") };
+      const kn = this.norm(a, "in"), kt = this.norm(b, "out");
+      if (kn && !nl.has(kn)) nl.set(kn, it); if (kt && !tr.has(kt)) tr.set(kt, it);
+    };
+    try { if (typeof C !== "undefined" && C.LIFELINES) C.LIFELINES.forEach(l => put(personalize(l[0]), personalize(l[1]), personalize(l[2] || ""))); } catch { }
+    try { if (typeof itemIndex === "function") itemIndex().forEach(it => put(it.nl, it.tr, it.ok)); } catch { }
+    this._idx = { nl, tr }; this._idxAt = Date.now();
+    return this._idx;
+  },
+  get(dir, text, ctx) {
+    try {
+      if (dir !== "in" && dir !== "out") return null;
+      const k = this.norm(text, dir); if (!k) return null;
+      const c = String(ctx || ""), l = this.list();
+      const i = l.findIndex(x => x.k === k && x.dir === dir && x.ctx === c);
+      if (i >= 0 && !(SERIOUS.has(c) && Date.now() - (l[i].at || 0) > MEMO_SERIOUS_MS)) {
+        const x = l[i]; x.n = (x.n || 1) + 1;
+        if (i > 0) { l.splice(i, 1); l.unshift(x); }
+        this.save();
+        return { r: postFix(dir, fillDefaults(JSON.parse(JSON.stringify(x.r)), SCHEMA[dir])), src: "memo" };
+      }
+      const ix = this.index(), it = dir === "in" ? ix.nl.get(k) : ix.tr.get(k);
+      if (it) return { r: postFix(dir, fillDefaults(dir === "in" ? { ceviri_tr: it.tr, duzeltilmis_nl: it.nl, guven: "yuksek" } : { nl: it.nl, okunus: it.ok, tr_geri: it.tr }, SCHEMA[dir])), src: "icerik" };
+    } catch { }
+    return null;
+  },
+  /** Kayıt var mı? (sırayı / sayaçları değiştirmeden bak — spekülatif çeviri boşa başlamasın) */
+  has(dir, text, ctx) {
+    try {
+      if (dir !== "in" && dir !== "out") return false;
+      const k = this.norm(text, dir); if (!k) return false;
+      const c = String(ctx || ""), x = this.list().find(y => y.k === k && y.dir === dir && y.ctx === c);
+      if (x && !(SERIOUS.has(c) && Date.now() - (x.at || 0) > MEMO_SERIOUS_MS)) return true;
+      const ix = this.index(); return !!(dir === "in" ? ix.nl.get(k) : ix.tr.get(k));
+    } catch { return false; }
+  },
+  put(dir, text, ctx, r) {
+    try {
+      if ((dir !== "in" && dir !== "out") || !r || typeof r !== "object") return false;
+      const k = this.norm(text, dir); if (!k || k.length > 240) return false;
+      if (r.onemli_uyari_tr || r.uyari_tr || r.guven === "dusuk") return false; // uyarılı / emin olunmayan cevap her seferinde yeniden düşünülsün
+      if (dir === "in" ? !r.ceviri_tr : !r.nl) return false;
+      try { // hesap / ödeme / bağlantı alarmı olan metin hafızaya girmez
+        if (typeof scamSignals === "function" && scamSignals(String(text) + " " + (r.duzeltilmis_nl || "") + " " + (r.nl || "")).some(h => /IBAN|link|hesap/i.test(h))) return false;
+      } catch { }
+      const c = String(ctx || ""), l = this.list();
+      const i = l.findIndex(x => x.k === k && x.dir === dir && x.ctx === c);
+      const n = i >= 0 ? (l[i].n || 1) : 0; if (i >= 0) l.splice(i, 1);
+      l.unshift({ k, dir, ctx: c, r: JSON.parse(JSON.stringify(r)), at: Date.now(), n: n + 1 });
+      if (l.length > MEMO_MAX) l.length = MEMO_MAX;
+      this.save();
+      return true;
+    } catch { return false; }
+  },
+  /** Bir kaydı unut (ör. "Yeniden çevir" istendi) */
+  drop(dir, text, ctx) {
+    try { const k = this.norm(text, dir), c = String(ctx || ""), l = this.list(); const i = l.findIndex(x => x.k === k && x.dir === dir && x.ctx === c); if (i >= 0) { l.splice(i, 1); this.save(); return true; } } catch { }
+    return false;
+  },
+  size() { return this.list().length; },
+  clear() { clearTimeout(this._saveT); this._saveT = null; this._l = []; store.del("memo"); }
+};
+window.Memo = Memo;
+// sekme kapanırken bekleyen kayıt yazılsın
+window.addEventListener("pagehide", () => { try { if (Memo._saveT) Memo.save(true); } catch { } });
+
 /** Ayarlar ekranı için: önce en iyi model, sonra hızlı model. → { opus: "ok" | mesaj, haiku: "ok" | mesaj, error?: UserError } */
 async function testKey() {
   const one = async model => {

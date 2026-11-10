@@ -1,6 +1,6 @@
 /* Dil Köprüsü — başlangıç (tüm modüller yüklendikten sonra çalışır) */
 "use strict";
-const APP_VERSION = "8.3";
+const APP_VERSION = "9.0";
 
 /* ---------------- Kurulum linki: anahtarı başka telefona tek dokunuşla aktar ----------------
    Anahtar adresin # kısmında taşınır: bu kısım sunucuya (GitHub) gönderilmez. Açılınca kaydedilir ve adres çubuğundan silinir.
@@ -88,15 +88,20 @@ ACT.hideInstall = () => { store.set("hideInstall", true); refreshInstall(); };
 /* ---------------- Açılış ---------------- */
 // mikrofon şeridi alt menünün tam üstünde dursun; üst çubuk sabit kalsın (yükseklikler cihaza göre değişir)
 const fitDock = () => {
-  const n = $("nav.tabs"), h = $("header.top");
-  if (n) document.documentElement.style.setProperty("--navh", Math.round(n.getBoundingClientRect().height) + "px");
-  if (h) document.documentElement.style.setProperty("--headh", Math.round(h.getBoundingClientRect().height) + "px");
+  const n = $("nav.tabs"), h = $("header.top"), d = $("#dock"), root = document.documentElement.style;
+  // v9: alt menü yüzen hap — yükseklik değil, ekranın altından ne kadar yer kapladığı ölçülür (ders modunda gizliyken dokunma)
+  if (n) { const r = n.getBoundingClientRect(); if (r.height > 0) root.setProperty("--navh", Math.max(56, Math.round(innerHeight - r.top)) + "px"); }
+  if (h) root.setProperty("--headh", Math.round(h.getBoundingClientRect().height) + "px");
+  if (d) { const r = d.getBoundingClientRect(); if (r.height > 0) root.setProperty("--dockh", Math.round(r.height) + "px"); }
 };
 function boot() {
   // yenilemeden kalan alt-ekran geçmiş kayıtları geri tuşunu bozmasın
   try { if (history.state && history.state.dk) history.replaceState(null, ""); } catch { }
   applyTheme(); applyFontScale();
   fitDock(); addEventListener("resize", fitDock);
+  // mikrofon paneli büyüyüp küçüldükçe (hazır cümleler, canlı yazı) içerik ve bildirim yeri kendini ayarlasın
+  try { if (window.ResizeObserver) { const ro = new ResizeObserver(() => fitDock()); const d = $("#dock"), n = $("nav.tabs"); d && ro.observe(d); n && ro.observe(n); } } catch { }
+  try { document.fonts && document.fonts.ready && document.fonts.ready.then(fitDock); } catch { }
   matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", applyTheme);
   App.renderStats();
   const qs = new URLSearchParams(location.search);
@@ -106,6 +111,11 @@ function boot() {
   const stored = store.get("tab", "ogren");
   tab(okTabs.includes(qTab) ? qTab : (qs.get("mode") === "live" || store.get("openInterp", false)) ? "ceviri" : okTabs.includes(stored) ? stored : "ogren");
   if (!store.get("onb", false) && !qTab && !window.LANG_TEMP) showOnboarding(); // geçici dil: tanıtım şeridi örtmesin
+  // v9 hız: boşta SDK'yı ve bağlantıyı önden hazırla — ilk çeviri beklemesin (hata olursa sessiz geç)
+  const idle = window.requestIdleCallback ? f => requestIdleCallback(f, { timeout: 2500 }) : f => setTimeout(f, 900);
+  idle(() => { try { if (typeof warmup === "function") warmup(); } catch { } });
+  // v9: ?selftest=1 → cihazda kendi kendini sına (mikrofon, ses, depolama, bağlantı)
+  if (qs.get("selftest")) setTimeout(() => { try { if (typeof selfTest === "function") selfTest(); } catch (e) { console.error(e); } }, 600);
 }
 try { boot(); }
 catch (err) {
