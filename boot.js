@@ -1,6 +1,6 @@
 /* Dil Köprüsü — başlangıç (tüm modüller yüklendikten sonra çalışır) */
 "use strict";
-const APP_VERSION = "8.0";
+const APP_VERSION = "8.3";
 
 /* ---------------- Kurulum linki: anahtarı başka telefona tek dokunuşla aktar ----------------
    Anahtar adresin # kısmında taşınır: bu kısım sunucuya (GitHub) gönderilmez. Açılınca kaydedilir ve adres çubuğundan silinir.
@@ -31,7 +31,7 @@ ACT.makeSetupLink = async () => {
   let k = ""; try { k = decodeURIComponent(m[1]).trim(); } catch { }
   if (!KEY_RE.test(k)) { setTimeout(() => toast("Kurulum linki bozuk görünüyor"), 300); return; }
   const old = store.get("apiKey", "");
-  if (old && old !== k && !confirm(`Bu telefonda zaten bir anahtar var (…${old.slice(-4)}). Linkteki anahtar (…${k.slice(-4)}) ile değiştirilsin mi?\n\nSadece bu linki ağabeyin gönderdiyse "Tamam" de.`)) return;
+  if (old && old !== k && !confirm(`Bu telefonda zaten bir anahtar var (…${old.slice(-4)}). Linkteki anahtar (…${k.slice(-4)}) ile değiştirilsin mi?\n\nSadece bu linki ${L.belgium ? "ağabeyin" : "güvendiğin kişi"} gönderdiyse "Tamam" de.`)) return;
   store.set("apiKey", k);
   setTimeout(() => toast(IS_IOS && !matchMedia("(display-mode: standalone)").matches
     ? "✅ Anahtar eklendi. iPhone'da ana ekran uygulaması ayrı saklar: orada Ben → 🔧 → 📋 Yapıştır kullan."
@@ -105,7 +105,7 @@ function boot() {
   const okTabs = ["ogren", "pratik", "ceviri", "yardim", "ben"];
   const stored = store.get("tab", "ogren");
   tab(okTabs.includes(qTab) ? qTab : (qs.get("mode") === "live" || store.get("openInterp", false)) ? "ceviri" : okTabs.includes(stored) ? stored : "ogren");
-  if (!store.get("onb", false) && !qTab) showOnboarding();
+  if (!store.get("onb", false) && !qTab && !window.LANG_TEMP) showOnboarding(); // geçici dil: tanıtım şeridi örtmesin
 }
 try { boot(); }
 catch (err) {

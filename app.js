@@ -3,16 +3,16 @@
 /* Öğrenilen dile göre değişen arayüz metinleri ve örnek cümleler (L, LANG: lang.js).
    Cümle biçimi: [hedef dil, Türkçe, okunuş]. Felemenkçe değerler eski sabit metinlerin aynısıdır. */
 const AT = LANG === "en" ? {
-  lifelines: [["One moment, please.", "Bir saniye lütfen.", "uan moumınt, pliiz"], ["Could you repeat that, please?", "Tekrarlar mısınız?", "kud yu ripiit det, pliiz"], ["Sorry, I'm still learning English.", "Pardon, İngilizce öğreniyorum.", "sori, aym stil lörning ingliş"]],
+  lifelines: [["One moment, please.", "Bir saniye lütfen.", "uan MOUmınt, pliiz"], ["Could you repeat that, please?", "Tekrarlar mısınız?", "kud yu riPİİT det, pliiz"], ["Sorry, I'm still learning English.", "Pardon, İngilizce öğreniyorum.", "SOri, aym stil LÖRning İNgliş"]],
   tolk: ["I would like an interpreter, please.", "Tercüman istiyorum, lütfen."], write: "Could you write that down, please?",
   ttsTest: "Good morning, how can I help you?", onbSay: "Good morning! Nice to meet you.",
-  phone: [["Could you speak more slowly, please?", "Biraz daha yavaş konuşur musunuz?", "kud yu spiik mor slouli, pliiz"], ["Could you repeat that, please?", "Tekrarlar mısınız?", "kud yu ripiit det, pliiz"], ["Could you spell that, please?", "Harf harf söyler misiniz?", "kud yu spel det, pliiz"], ["Could you send me that by e-mail?", "Bunu bana e-postayla gönderir misiniz?", "kud yu send mi det bay iimeyl"], ["Can I call you back later?", "Sizi sonra geri arayabilir miyim?", "ken ay kool yu bek leytır"]],
+  phone: [["Could you speak more slowly, please?", "Biraz daha yavaş konuşur musunuz?", "kud yu spiik mor SLOUli, pliiz"], ["Could you repeat that, please?", "Tekrarlar mısınız?", "kud yu riPİİT det, pliiz"], ["Could you spell that, please?", "Harf harf söyler misiniz?", "kud yu spel det, pliiz"], ["Could you send me that by e-mail?", "Bunu bana e-postayla gönderir misiniz?", "kud yu send mi det bay İİmeyl"], ["Can I call you back later?", "Sizi sonra geri arayabilir miyim?", "kın ay kol yu bek LEYtır"]],
   order: "Kelimeler doğru ama sırası farklı. Hatırla: İngilizcede sıra çoğunlukla <b>özne + fiil + nesne</b>:",
   lvlNote: "Resmî seviye belgesi değildir; resmî seviye için IELTS, TOEFL ya da Cambridge gibi bir sınava girilir.",
   askHint: `"a mı the mı?", "bu cümle doğru mu: …", "since ile for farkı?"`, genPh: "ör. Teklif ve ödeme şartları",
   rescue: "yoğun günler olur", jobHead: "💼 Önce iş: ticaret & toplantı", jobSum: "💼 İş cümleleri",
   rpLevels: { "başlangıç": "Başlangıç — kısa, yavaş", orta: "Orta — günlük İngilizce", ileri: "İleri — doğal hız, deyimler" },
-  docTypes: { mektup: "📄 İş mektubu / e-posta", teknik: "🧪 Teknik belge (COA, TDS, SDS)", sozlesme: "📑 Sözleşme / sipariş / proforma", fatura: "🧾 Fatura", mesaj: "💬 Mesaj", diger: "📎 Diğer" },
+  docTypes: { mektup: "📄 İş mektubu / e-posta", teknik: "🧪 Teknik belge (COA, TDS, SDS)", sozlesme: "📑 Sözleşme / sipariş / proforma", lc: "🏦 Akreditif (L/C) taslağı", fatura: "🧾 Fatura", mesaj: "💬 Mesaj", diger: "📎 Diğer" },
   wTo: { sirket: "🏭 Tedarikçi / müşteri firma", sef: "👥 İş arkadaşı / yönetici", resmi: "🏛️ Resmî kurum / banka / konsolosluk", arkadas: "🙂 Arkadaş", evsahibi: "🏨 Otel / ev sahibi" }
 } : {
   lifelines: [["Een momentje, alstublieft.", "Bir saniye lütfen.", "een moomentyı, alstüblift"], ["Kunt u dat herhalen?", "Tekrarlar mısınız?", "künt ü dat herhaalın"], ["Sorry, ik leer nog Nederlands.", "Pardon, Felemenkçe öğreniyorum.", "sori, ik leer noh needırlants"]],
@@ -82,6 +82,74 @@ function saveItem({ nl, tr, ok, src }) {
   if (!SRS.get(nl)) { const s = SRS.all(); s[nl] = { b: 0, lapses: 0, due: todayStr() }; store.set("srs", s); }
   toast("Kartlarına eklendi ➕"); haptic(10);
 }
+/* İngilizce dikte/söyleme eşleşmesi (v8.1): duyulanı hedefin yazımına yaklaştır, sonra core'daki wordMatch.
+   - sayılarda "and" farkı: "three hundred and twenty" = "three hundred twenty"
+   - rakam ↔ sayı kelimesi: "320" = "three hundred (and) twenty"
+   - İngiliz/Amerikan yazımı: cancelled/canceled, colour/color, centre/center, organise/organize… */
+const EN_NUM1 = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"];
+const EN_NUM10 = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+function enNumWords(n) {
+  if (!(n >= 0) || n > 999999999) return null;
+  const b100 = x => x < 20 ? EN_NUM1[x] : EN_NUM10[Math.floor(x / 10)] + (x % 10 ? " " + EN_NUM1[x % 10] : "");
+  const b1000 = x => (x >= 100 ? EN_NUM1[Math.floor(x / 100)] + " hundred" + (x % 100 ? " " + b100(x % 100) : "") : b100(x));
+  if (n < 1000) return b1000(n);
+  const parts = []; const m = Math.floor(n / 1e6), th = Math.floor(n / 1000) % 1000, r = n % 1000;
+  if (m) parts.push(b1000(m) + " million"); if (th) parts.push(b1000(th) + " thousand"); if (r) parts.push(b1000(r));
+  return parts.join(" ");
+}
+const enCanon = w => String(w).toLowerCase()
+  .replace(/ell(ed|ing|er|ers)$/, "el$1")              // cancelled → canceled, travelling → traveling
+  .replace(/(\w{2,})our(s|ed|ing|ite|ites)?$/, "$1or$2") // colour → color, favourite → favorite (four/hour/your değil)
+  .replace(/is(e|es|ed|ing|ation|ations)$/, "iz$1")    // organise → organize, organisation → organization
+  .replace(/ys(e|es|ed|ing)$/, "yz$1")                 // analyse → analyze
+  .replace(/([^aeiou])re(s)?$/, "$1er$2")              // centre → center, litre → liter, metre → meter
+  .replace(/ogue(s)?$/, "og$1")                        // catalogue → catalog
+  .replace(/ence$/, "ense")                            // licence → license, defence → defense
+  .replace(/^grey$/, "gray")
+  .replace(/^tonne(s)?$/, "ton$1");                    // tonnes → tons (metrik ton; ASR İngiliz yazımı)
+function enHeardFix(target, heard) {
+  const NUMW = /^(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million)$/;
+  const tw = normWords(target);
+  const tHasWords = tw.some(w => NUMW.test(w)), tHasDigits = tw.some(w => /^\d+$/.test(w));
+  let h = String(heard ?? "");
+  // rakam ↔ kelime: hedef kelimeyle yazılmışsa duyulan rakamları kelimeye çevir
+  if (tHasWords && !tHasDigits) h = h.replace(/\d[\d,]*/g, m => { const n = +m.replace(/,/g, ""); return enNumWords(n) || m; });
+  let hw = normWords(h);
+  // hedef rakamla yazılmışsa duyulan sayı kelimelerini rakama çevir
+  if (tHasDigits && !tHasWords) {
+    const out = []; let i = 0;
+    while (i < hw.length) {
+      if (!NUMW.test(hw[i])) { out.push(hw[i++]); continue; }
+      let total = 0, cur = 0, j = i;
+      for (; j < hw.length; j++) {
+        const w = hw[j];
+        if (w === "and" && j + 1 < hw.length && NUMW.test(hw[j + 1]) && j > i) continue;
+        if (!NUMW.test(w)) break;
+        const k = EN_NUM1.indexOf(w), d = EN_NUM10.indexOf(w);
+        if (k >= 0) cur += k; else if (d >= 2) cur += d * 10;
+        else if (w === "hundred") cur = (cur || 1) * 100;
+        else { total += (cur || 1) * (w === "thousand" ? 1000 : 1e6); cur = 0; }
+      }
+      out.push(String(total + cur)); i = j;
+    }
+    hw = out;
+  }
+  const tSet = new Set(tw);
+  // sayılar arasındaki "and": hedefte yoksa duyulandan at; hedefte varsa duyulana ekle
+  const tAnd = tw.some((w, i) => w === "and" && /^(hundred|thousand|million)$/.test(tw[i - 1] || "") && NUMW.test(tw[i + 1] || ""));
+  const fixed = [];
+  hw.forEach((w, i) => {
+    const prevBig = /^(hundred|thousand|million)$/.test(hw[i - 1] || ""), nextNum = NUMW.test(hw[i + 1] || "");
+    if (w === "and" && prevBig && nextNum && !tAnd) return;
+    fixed.push(w);
+    if (tAnd && /^(hundred|thousand|million)$/.test(w) && NUMW.test(hw[i + 1] || "") && hw[i + 1] !== "and") fixed.push("and");
+  });
+  // İngiliz/Amerikan yazımı: duyulan kelimeyi hedefteki yazıma çevir
+  const byCanon = new Map(); tw.forEach(w => byCanon.set(enCanon(w), w));
+  return fixed.map(w => tSet.has(w) ? w : (byCanon.get(enCanon(w)) || w)).join(" ");
+}
+/** Dikte/söyleme eşleşmesi: en'de önce yazım/sayı farklarını tolere et; nl'de core'daki wordMatch aynen */
+const wm = (target, heard) => wordMatch(target, LANG === "en" ? enHeardFix(target, heard) : heard);
 function persistStorage() { try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch { } }
 
 /* ---------------- Uygulama durumu ---------------- */
@@ -149,19 +217,24 @@ ACT.tab = el => tab(el.dataset.v);
 ACT.say = el => TTS.speak(el.dataset.say);
 ACT.slow = el => TTS.speak(el.dataset.say, { slow: true });
 ACT.add = el => { saveItem(el.dataset); el.textContent = "✅"; };
-ACT.show = el => openShow(el.dataset.nl, el.dataset.tr);
+ACT.show = el => openShow(el.dataset.nl, el.dataset.tr, LANG === "en" ? el.dataset.ok : undefined); // nl: 2 parametre (ekran aynı)
 ACT.goKey = () => { App.benFocusKey = true; App.benOpenSetup = true; tab("ben"); };
 ACT.cancelReq = el => { abortFeature(el.dataset.f); };
 
 /* ---------------- Karşıdakine göster (büyük ekran) ---------------- */
-function openShow(nl, tr) {
+/** C4: openShow(nl, tr, ok) — ok (okunuş) isteğe bağlı; verilirse büyük gösterilir.
+    İngilizcede [köşeli parantezler] silinmez: kullanıcı neyi dolduracağını görsün (sesli okumada atlanır). */
+function openShow(nl, tr, ok) {
   const o = $("#showOverlay"); const n = $("#showNL");
-  n.textContent = String(nl || "").replace(/[\[\]]/g, "");
+  n.textContent = LANG === "en" ? String(nl || "") : String(nl || "").replace(/[\[\]]/g, "");
   $("#showTR").textContent = tr || ""; $("#showTR").classList.add("hidden");
+  const okEl = $("#showOK"); const hasOk = !!(ok && String(ok).trim());
+  if (okEl) { okEl.textContent = hasOk ? String(ok) : ""; okEl.classList.toggle("hidden", !hasOk); }
   o.classList.add("on");
   let size = 64; n.style.fontSize = size + "px";
-  while (size > 22 && (n.scrollHeight > window.innerHeight * 0.55 || n.scrollWidth > n.clientWidth + 2)) { size -= 3; n.style.fontSize = size + "px"; }
-  Wake.on(); TTS.speak(n.textContent);
+  const room = hasOk ? 0.42 : 0.55;
+  while (size > 22 && (n.scrollHeight > window.innerHeight * room || n.scrollWidth > n.clientWidth + 2)) { size -= 3; n.style.fontSize = size + "px"; }
+  Wake.on(); TTS.speak(n.textContent.replace(/[\[\]]/g, ""));
   $("[data-act=showClose]", o).focus();
   if (!o.dataset.back) { o.dataset.back = "1"; Back.push(() => closeShow(true)); }
 }
@@ -170,7 +243,7 @@ function closeShow(fromBack) {
   o.classList.remove("on"); TTS.stop(); if (App.view !== "ceviri") Wake.off();
   if (o.dataset.back) { delete o.dataset.back; if (!fromBack) Back.drop(); }
 }
-ACT.showSpeak = () => TTS.speak($("#showNL").textContent);
+ACT.showSpeak = () => TTS.speak($("#showNL").textContent.replace(/[\[\]]/g, ""));
 ACT.showTr = () => $("#showTR").classList.toggle("hidden");
 ACT.showClose = () => closeShow();
 $("#showOverlay").addEventListener("click", e => { if (!e.target.closest("button")) closeShow(); });
@@ -192,38 +265,106 @@ function ring(done, goal) {
     <circle class="bg" cx="42" cy="42" r="${r}"/><circle class="fg" cx="42" cy="42" r="${r}" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - f)}" transform="rotate(-90 42 42)"/>
     <text x="42" y="44" text-anchor="middle">${done}</text><text x="42" y="60" text-anchor="middle" style="font-size:11px;font-weight:600;fill:var(--muted)">/ ${goal} kart</text></svg>`;
 }
+/** Üretme kartı (Türkçe → hedef dil) bu cümleye uygun mu? en: ≤8 kelime ve liste değil (2+ virgül yok). nl: hep. */
+function prodOk(nl) {
+  if (LANG !== "en") return true;
+  const t = String(nl || "");
+  return t.split(/\s+/).filter(Boolean).length <= 8 && (t.match(/,/g) || []).length < 2;
+}
 function dailyPlan() {
   const s = SRS.all(), idx = itemIndex(), today = todayStr();
+  const EN = LANG === "en";
   let flip = 0;
-  const due = Object.entries(s).filter(([k, r]) => r.due && r.due <= today && !k.endsWith("|s")).sort((a, b) => a[1].due < b[1].due ? -1 : 1)
+  const due0 = Object.entries(s).filter(([k, r]) => r.due && r.due <= today && !k.endsWith("|s")).sort((a, b) => a[1].due < b[1].due ? -1 : 1)
     .map(([k, r]) => {
       const p = k.endsWith("|p"); const it = idx.get(p ? k.slice(0, -2) : k); if (!it) return null;
-      if (p) return { type: "prod", item: it };
+      if (p) return prodOk(it.nl) ? { type: "prod", item: it } : null; // en: uzun/liste cümlede üretme kartı yok
       // iyi bilinen kartlarda çeşitlilik: bir kart görerek, bir kart sadece dinleyerek
       if ((r.b || 0) >= 2 && (flip++ % 2 === 1)) return { type: "listen", item: it };
       return { type: "flash", item: it };
     })
-    .filter(Boolean).slice(0, 30);
+    .filter(Boolean);
   const perDay = { 5: 5, 10: 8, 20: 12 }[profile().goal] || 8;
   const nt = store.get("newToday", {}); const already = nt.d === today ? nt.n : 0;
-  // çok tekrar birikmişse yeni kart verme: önce eskiler
-  const brake = due.length > 25 ? 0 : due.length > 15 ? Math.min(3, perDay) : perDay;
+  let due, brake;
+  if (EN) {
+    // en (v8.3): tekrar tavanı hedefe göre (5 dk → 12, 10 dk → 20, 20 dk → 30), üretme kartı ≤ tavan/3; fren yalnız TANIMA kartlarını sayar
+    // (üretme kartları yeni kartı kesmesin — yoksa 30 günde ~60 yeni kartta kalıyordu)
+    const cap = { 5: 12, 10: 20, 20: 30 }[profile().goal] || 20, prodCap = Math.floor(cap / 3);
+    let np = 0; due = due0.filter(d => d.type !== "prod" || np++ < prodCap).slice(0, cap);
+    const recDue = due.filter(d => d.type !== "prod").length;
+    brake = recDue > 25 ? 0 : recDue > Math.round(cap * 0.75) ? Math.min(3, perDay) : perDay;
+    // ısınma: oturum önce tanıma kartlarıyla başlar, üretme (TR → EN) kartları sonra
+    due = [...due.filter(d => d.type !== "prod"), ...due.filter(d => d.type === "prod")];
+  } else {
+    due = due0.slice(0, 30);
+    // çok tekrar birikmişse yeni kart verme: önce eskiler
+    brake = due.length > 25 ? 0 : due.length > 15 ? Math.min(3, perDay) : perDay;
+  }
   const want = Math.max(0, brake - already);
   const unseen = list => list.filter(i => !s[i.nl]);
-  const job = unseen(C.CATS.filter(c => c.lvl === "AH").flatMap(catItems));
-  const track = unseen([...LV_ORDER.flatMap(l => C.CATS.filter(c => c.lvl === l && !c.words).flatMap(catItems)), ...aiCats().flatMap(catItems)]);
   const lvlNow = LV_ORDER.indexOf(profile().level || "A1");
+  // en (C5): iş şeridine yalnız seviyene uygun iş konuları (A1'de yalnız ahLvl A1; üstünde ahLvl ≤ seviye+1); A1'de yalnız ≤6 kelimelik iş cümleleri
+  const jobCatsPlan = C.CATS.filter(c => c.lvl === "AH" && (!EN || (lvlNow <= 0 ? (c.ahLvl || "B1") === "A1" : LV_ORDER.indexOf(c.ahLvl || "B1") <= lvlNow + 1)));
+  let job = unseen(jobCatsPlan.flatMap(catItems));
+  if (EN && lvlNow <= 0) {
+    job = job.filter(i => i.nl.split(/\s+/).length <= 6);
+    // v8.3: A1 iş havuzu (~29 cümle) bitince A2 iş konularının ≤6 kelimelik cümleleri — iş şeridi kurumasın
+    if (!job.length) job = unseen(C.CATS.filter(c => c.lvl === "AH" && c.ahLvl === "A2").flatMap(catItems)).filter(i => i.nl.split(/\s+/).length <= 6);
+  }
+  let track = unseen([...LV_ORDER.flatMap(l => C.CATS.filter(c => c.lvl === l && !c.words).flatMap(catItems)), ...aiCats().flatMap(catItems)]);
   const wordLane = unseen(C.CATS.filter(c => c.words && LV_ORDER.indexOf(c.lvl) <= lvlNow + 1).flatMap(catItems)); // kelime şeridi: günde en fazla 3
+  // en (C6): ilk 3 gün yalnız temel A1 sırası; ilk üç konudan (selamlaşma → tanışma → anlamadım) dönüşümlü
+  // startDay ilk ÇALIŞILAN kartta yazılır (nextTask); yoksa bugün 0. gündür
+  let basicsFirst = false;
+  if (EN) {
+    const sd = store.get("startDay", "");
+    basicsFirst = !sd || Math.round((new Date(today) - new Date(sd)) / 86400000) < 3;
+    if (basicsFirst) {
+      const first3 = C.CATS.filter(c => c.lvl === "A1" && !c.words).slice(0, 3).map(c => { const all = catItems(c), u = unseen(all); return { u, seen: all.length - u.length }; })
+        .sort((x, y) => x.seen - y.seen).map(x => x.u); // en az görülen konu öne: üç konu da her gün ilerlesin
+      const rr = []; for (let i = 0; first3.some(l => i < l.length); i++) first3.forEach(l => { if (i < l.length) rr.push(l[i]); });
+      const inRR = new Set(rr.map(i => i.nl));
+      track = [...rr, ...track.filter(i => !inRR.has(i.nl))];
+    }
+  }
+  const jobEvery = EN && lvlNow <= 0 ? 3 : 2; // A1: 2 temel : 1 iş; üstü: 1 : 1
   const fresh = []; let a = 0, b = 0, w = 0;
-  const wantWords = Math.min(3, Math.floor(want / 3)); while (w < wantWords && w < wordLane.length) fresh.push(wordLane[w++]);
-  while (fresh.length < want && (a < job.length || b < track.length)) {
+  const wantWords = basicsFirst ? 0 : Math.min(EN && lvlNow <= 0 ? 1 : 3, Math.floor(want / 3)); /* en A1: günde 1 kelime — önce A1 cümleleri bitsin */ while (w < wantWords && w < wordLane.length) fresh.push(wordLane[w++]);
+  if (EN) {
+    let k = 0;
+    while (fresh.length < want && (b < track.length || (!basicsFirst && a < job.length))) {
+      k++;
+      const jobTurn = !basicsFirst && a < job.length && (k % jobEvery === 0 || b >= track.length);
+      if (jobTurn) fresh.push(job[a++]); else if (b < track.length) fresh.push(track[b++]);
+    }
+    // temeller bitince her gün en az 1 iş cümlesi (fren 3'e düşse bile)
+    if (!basicsFirst && want > 0 && !a && job.length) { if (fresh.length > w) fresh[fresh.length - 1] = job[a++]; else fresh.push(job[a++]); }
+  } else while (fresh.length < want && (a < job.length || b < track.length)) {
     if (b < track.length) fresh.push(track[b++]); // temeller
     if (fresh.length < want && a < job.length) fresh.push(job[a++]); // iş cümleleri
   }
   // günde bir dilbilgisi mini alıştırması (seviyendeki dersler sırayla)
   let gram = null;
   const lvl = profile().level || "A1";
-  const gl = C.GRAMMAR.filter(g => g.lvl === lvl && (g.ex || []).some(x => x[0].split(/\s+/).length >= 3));
+  const hasEx = g => (g.ex || []).some(x => x[0].split(/\s+/).length >= 3);
+  let gl = C.GRAMMAR.filter(g => g.lvl === lvl && hasEx(g));
+  if (EN) { // en (v8.3): 3 günde bir sıradaki okunmamış ders ("📐 Bugünün dersi"); arada diziliş — yalnız SRS'de görülmüş cümlelerden
+    gl = [];
+    if (store.get("gramDay", "") !== today) {
+      const seenG = store.get("gramSeen", []);
+      const nextG = C.GRAMMAR.find(x => x.lvl === lvl && !seenG.includes(x.id));
+      const lastRead = store.get("gramReadDay", ""), sd = store.get("startDay", "");
+      const since = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
+      const readDue = lastRead ? since(lastRead, today) >= 3 : since(sd || today, today) % 3 === 0;
+      if (nextG && readDue) gram = { type: "gramRead", item: { nl: nextG.t, tr: "", ok: "", src: nextG.id }, gram: nextG.t, gid: nextG.id, noSrs: true };
+      else {
+        const inDue = new Set(due.map(d => d.item.nl));
+        const pool = [...idx.values()].filter(i => s[i.nl] && !inDue.has(i.nl) && i.nl.split(/\s+/).length >= 3 && i.nl.split(/\s+/).length <= 8 && (i.nl.match(/,/g) || []).length < 2);
+        if (pool.length) { const x = pool[Math.floor(Math.random() * pool.length)]; gram = { type: "order", item: x, gram: "diziliş", noSrs: true }; }
+      }
+    }
+  }
   if (gl.length && store.get("gramDay", "") !== today) {
     const g = gl[(Math.floor(Date.now() / 86400000)) % gl.length];
     const ex = (g.ex || []).filter(x => x[0].split(/\s+/).length >= 3);
@@ -242,14 +383,14 @@ function renderLearnHome() {
   const missed = lastDay ? Math.round((new Date(todayStr()) - new Date(lastDay)) / 86400000) : 0;
   const rescue = missed >= 2 && t.cards < 5;
   const isShop = !L.belgium || /süpermarket|albert|market|kasa|winkel/i.test(p.job || ""); // İngilizcede iş cümleleri hep önde
-  const levelBlocks = LV_ORDER.filter(l => C.LEVELS.some(x => x.id === l)).map(l => {
+  const levelNode = (l, openAs) => {
     const L = C.LEVELS.find(x => x.id === l); const cats = C.CATS.filter(c => c.lvl === l);
     const pct = learnedPct(cats.flatMap(catItems));
     const cur = l === (p.level || "A1"); const done = pct >= 80;
     const gr = C.GRAMMAR.filter(g => g.lvl === l);
     const cando = (C.CANDO[l] || []).map(x => typeof x === "string" ? { t: x } : x);
     const ticks = store.get("cando", {});
-    return `<div class="node ${done ? "done" : cur ? "cur" : ""}"><details class="card" ${cur ? "open" : ""}>
+    return `<div class="node ${done ? "done" : cur ? "cur" : ""}"><details class="card" ${(openAs != null ? openAs : cur) ? "open" : ""}${LANG === "en" ? ` data-lv="${l}"` : ""}>
       <summary><span class="tag br">${l}</span> ${esc(L.n)} <span class="small muted">· %${pct}</span></summary>
       <div class="small muted" style="margin:6px 0 10px">${esc(L.d || "")}</div>
       <div class="grid2">${cats.map(tile).join("")}</div>
@@ -260,12 +401,16 @@ function renderLearnHome() {
       ${l === (p.level || "A1") && cando.length && cando.every((x, i) => ticks[l + i]) && (store.get("cpBest", {})[l] || 0) >= 80 && LV_ORDER[LV_ORDER.indexOf(l) + 1] ? `<button class="btn primary sm block" style="margin-top:8px" data-act="levelUp" data-l="${LV_ORDER[LV_ORDER.indexOf(l) + 1]}">⬆️ ${LV_ORDER[LV_ORDER.indexOf(l) + 1]} seviyesine geç</button>` : ""}
       <div class="small muted" style="margin-top:4px">${AT.lvlNote}</div>
     </details></div>`;
-  }).join("");
+  };
+  const lvIds = LV_ORDER.filter(l => C.LEVELS.some(x => x.id === l));
+  const levelBlocks = lvIds.map(l => levelNode(l)).join("");
   const jobCats = C.CATS.filter(c => c.lvl === "AH");
   const mine = aiCats();
+  const rescueHtml = `${rescue ? `<div class="card" style="border-color:var(--brand)"><b>👋 Tekrar hoş geldin!</b><div class="small">${missed} gündür yoktun, sorun değil — ${AT.rescue}. 2 dakikalık dönüş: sadece 5 kart.</div>
+      <button class="btn primary sm" style="margin-top:8px" data-act="quick5">▶ 2 dakika, 5 kart</button></div>` : ""}`;
+  if (LANG === "en") return renderLearnHomeEN({ p, t, plan, planned, goal, rescueHtml, levelNode, lvIds, jobCats, mine });
   $("#v-ogren").innerHTML = `${installCard()}
-    ${rescue ? `<div class="card" style="border-color:var(--brand)"><b>👋 Tekrar hoş geldin!</b><div class="small">${missed} gündür yoktun, sorun değil — ${AT.rescue}. 2 dakikalık dönüş: sadece 5 kart.</div>
-      <button class="btn primary sm" style="margin-top:8px" data-act="quick5">▶ 2 dakika, 5 kart</button></div>` : ""}
+    ${rescueHtml}
     <div class="card"><div class="hero">${ring(t.cards, goal)}
       <div class="grow"><h2 style="margin:0">Bugünün dersi</h2>
         <div class="small muted">${planned ? `${plan.due.length} tekrar · ${plan.fresh.length} yeni cümle${plan.gram ? " · 1 dilbilgisi" : ""}` : "Planlanan her şey bitti"}</div>
@@ -278,7 +423,13 @@ function renderLearnHome() {
     <h2>🧭 Seviye yolu</h2>
     <div class="path">${levelBlocks}</div>
     ${!isShop && jobCats.length ? `<details class="card"><summary>${AT.jobSum}</summary><div class="grid2" style="margin-top:10px">${jobCats.map(tile).join("")}</div></details>` : ""}
-    <details class="card" ${App.learn.moreOpen ? "open" : ""} id="moreBox"><summary>✨ Öğretmen, istediğin konuda ders, okunuş anahtarı</summary>
+    ${moreBoxHtml(p, mine)}`;
+  const mb = $("#moreBox"); if (mb) mb.addEventListener("toggle", () => { App.learn.moreOpen = mb.open; });
+  $$("[data-cando]").forEach(c => c.onchange = () => { const t2 = store.get("cando", {}); t2[c.dataset.cando] = c.checked; store.set("cando", t2); if (c.checked) haptic(10); });
+}
+/** Öğretmene sor + istediğin konuda ders + okunuş anahtarı (katlanır kutu) */
+function moreBoxHtml(p, mine) {
+  return `<details class="card" ${App.learn.moreOpen ? "open" : ""} id="moreBox"><summary>✨ Öğretmen, istediğin konuda ders, okunuş anahtarı</summary>
     <div style="margin-top:10px">
       <h3 style="margin:0 0 6px">❓ Öğretmene sor</h3>
       <p class="small muted" style="margin:0 0 8px">${AT.askHint}</p>
@@ -302,13 +453,55 @@ function renderLearnHome() {
       <table class="key" style="margin-top:8px">${C.OKUNUS_KEY.map(r => `<tr><td><b>${esc(r[0])}</b></td><td>${esc(r[1])}${r[2] ? ` — <i>${esc(r[2])}</i>` : ""}</td></tr>`).join("")}</table>
       <p class="small muted">Okunuşlar yaklaşık yazımdır; asıl doğru ses için 🔊. Bir kartı iyi öğrenince okunuş gizlenir — kendi okumaya alış.</p>
     </details></div></details>`;
+}
+/** İngilizce Öğren ana ekranı (v8.1): üstte iki büyük düğme, sonra yalnız şu anki seviye; gerisi tek katlanır "Tüm konular" alanında */
+function renderLearnHomeEN({ p, t, plan, planned, goal, rescueHtml, levelNode, lvIds, jobCats, mine }) {
+  const cur = lvIds.includes(p.level || "A1") ? (p.level || "A1") : lvIds[0];
+  const others = lvIds.filter(l => l !== cur);
+  const allOpen = !!store.get("allOpen", false);
+  const extCards = EXT.learnCards.map(f => { try { return f() || ""; } catch { return ""; } }).join("");
+  // v8.3: A1 temel cümlelerin %80'i görülünce bir kez "A2'ye geçmek ister misin?" (cevap verilince bir daha sorulmaz)
+  let a2Html = "";
+  if ((p.level || "A1") === "A1" && !store.get("a2Asked", false)) {
+    const a1 = C.CATS.filter(c => c.lvl === "A1" && !c.words).flatMap(catItems);
+    const seenN = a1.filter(i => SRS.get(i.nl)).length;
+    if (a1.length && seenN / a1.length >= 0.8) a2Html = `<div class="card" style="border-color:var(--brand)"><b>🎉 A1 temel cümlelerin %${Math.round(100 * seenN / a1.length)}'ini gördün.</b>
+      <div class="small" style="margin-top:4px">A2'ye geçmek ister misin? Günlük derste daha uzun iş cümleleri ve seyahat konuları gelir; A1 tekrarların sürer.</div>
+      <div class="row" style="gap:8px;margin-top:8px"><button class="btn primary sm grow" data-act="a2Offer" data-v="yes">⬆️ Evet, A2'ye geç</button><button class="btn sm grow" data-act="a2Offer" data-v="no">Şimdilik A1</button></div></div>`;
+  }
+  $("#v-ogren").innerHTML = `${installCard()}
+    ${rescueHtml}
+    <div class="card"><div class="hero">${ring(t.cards, goal)}
+      <div class="grow"><h2 style="margin:0">Bugünün dersi</h2>
+        <div class="small muted">${planned ? `${plan.due.length} tekrar · ${plan.fresh.length} yeni cümle${plan.gram ? " · 1 dilbilgisi" : ""}` : "Planlanan her şey bitti"}</div>
+        <div class="small" style="margin-top:2px">${t.cards >= 5 ? "🔥 Seri bugün korundu" : `Seri için ${5 - t.cards} kart daha`}</div>
+      </div></div>
+      ${planned ? `<button class="btn primary bigstart" style="margin-top:10px" data-act="daily">▶ ${t.cards ? "Devam et" : "Bugünün dersi"} (${+p.goal || 10} dk)</button>`
+        : `<button class="btn bigstart" style="margin-top:10px" data-act="extra">➕ Ekstra tur (bildiklerini pekiştir)</button>`}
+      <button class="btn bigstart" style="margin-top:8px" data-act="goLive">🎧 Canlı altyazı</button>
+      <div class="small muted" style="margin-top:4px;text-align:center">Toplantıda konuşulan İngilizceyi Türkçe altyazı gibi oku</div>
+    </div>
+    ${a2Html}
+    ${cur ? `<h2>🧭 Seviye yolu</h2><div class="path">${levelNode(cur, !!App.learn.lvOpen)}</div>` : ""}
+    <details class="card" id="allBox" ${allOpen ? "open" : ""}><summary><b>📚 Tüm konular</b> <span class="small muted">— kulak eğitimi, iş cümleleri, diğer seviyeler, öğretmen</span></summary>
+      <div style="margin-top:10px">
+        ${extCards}
+        ${jobCats.length ? `<h2>${AT.jobHead}</h2><div class="grid2" style="margin-bottom:14px">${jobCats.map(tile).join("")}</div>` : ""}
+        ${others.length ? `<h2>🧭 Diğer seviyeler</h2><div class="path">${others.map(l => levelNode(l, false)).join("")}</div>` : ""}
+        ${moreBoxHtml(p, mine)}
+      </div></details>`;
+  const lv = $(`#v-ogren details[data-lv="${cur}"]`); if (lv && cur) lv.addEventListener("toggle", () => { App.learn.lvOpen = lv.open; });
+  const ab = $("#allBox"); if (ab) ab.addEventListener("toggle", () => store.set("allOpen", ab.open));
   const mb = $("#moreBox"); if (mb) mb.addEventListener("toggle", () => { App.learn.moreOpen = mb.open; });
   $$("[data-cando]").forEach(c => c.onchange = () => { const t2 = store.get("cando", {}); t2[c.dataset.cando] = c.checked; store.set("cando", t2); if (c.checked) haptic(10); });
 }
+/** "🎧 Canlı altyazı" kısayolu: tercümanı canlı altyazı modunda aç */
+ACT.goLive = () => { App.interp.live = true; store.set("interpLive", true); tab("ceviri"); };
+ACT.a2Offer = el => { store.set("a2Asked", true); if (el.dataset.v === "yes") ACT.levelUp({ dataset: { l: "A2" } }); else { toast("Tamam — A1'de devam. Ben sekmesinden istediğin zaman değiştirebilirsin."); renderLearn(); } };
 ACT.levelUp = el => { const p = profile(); p.level = el.dataset.l; store.set("profile", p); toast(`⬆️ Seviye: ${el.dataset.l} — tebrikler!`); Progress.addXP(10); renderLearn(); };
 ACT.quick5 = () => {
   const { due, fresh } = dailyPlan();
-  const tasks = [...due, ...fresh.map(it => ({ type: "flash", item: it, isNew: true }))].slice(0, 5);
+  const tasks = (LANG === "en" ? planTasks({ due, fresh, gram: null }) : [...due, ...fresh.map(it => ({ type: "flash", item: it, isNew: true }))]).slice(0, 5);
   if (!tasks.length) return ACT.extra();
   startStudy(tasks, "2 dakikalık dönüş", () => { App.learn = { mode: "home" }; });
 };
@@ -322,16 +515,24 @@ ACT.extra = () => {
 };
 function tile(c) {
   return `<button class="tile" data-act="openCat" data-id="${esc(c.id)}"><div class="e" aria-hidden="true">${esc(c.e || "📘")}</div><div class="n">${esc(c.n)}</div>
-    <div class="small muted">${c.items.length} cümle</div><div class="bar"><i style="width:${learnedPct(catItems(c))}%"></i></div></button>`;
+    <div class="small muted">${c.items.length} ${LANG === "en" && c.words ? "kelime" : "cümle"}</div><div class="bar"><i style="width:${learnedPct(catItems(c))}%"></i></div></button>`;
 }
 ACT.openCat = el => { App.learn = { mode: "cat", id: el.dataset.id }; if (App.view !== "ogren") tab("ogren"); else renderLearn(); window.scrollTo(0, 0); Back.push(() => { App.learn = { mode: "home" }; renderLearn(); }); };
 ACT.openGram = el => { App.learn = { mode: "gram", id: el.dataset.id }; renderLearn(); window.scrollTo(0, 0); Back.push(() => { App.learn = { mode: "home" }; renderLearn(); }); };
 ACT.learnHome = () => { Back.drop(); App.learn = { mode: "home" }; renderLearn(); window.scrollTo(0, 0); };
 ACT.topic = el => { $("#genTopic").value = el.dataset.t; };
-ACT.daily = () => {
-  const { due, fresh, gram } = dailyPlan();
-  const tasks = [...due, ...fresh.map(it => ({ type: "flash", item: it, isNew: true }))];
+/** Günlük planı kart sırasına çevir. nl: önce tekrarlar sonra yeniler (eskisi gibi).
+    en (v8.2): yeni kartlar sona yığılmaz, her 3 tekrarda bir serpiştirilir (oturum yarıda kalsa da yeni gelir). */
+function planTasks({ due, fresh, gram }) {
+  const nw = fresh.map(it => ({ type: "flash", item: it, isNew: true }));
+  let tasks;
+  if (LANG === "en") { tasks = []; let j = 0; due.forEach((d, i) => { tasks.push(d); if ((i + 1) % 3 === 0 && j < nw.length) tasks.push(nw[j++]); }); tasks.push(...nw.slice(j)); }
+  else tasks = [...due, ...nw];
   if (gram) tasks.splice(Math.min(tasks.length, 4), 0, gram);
+  return tasks;
+}
+ACT.daily = () => {
+  const tasks = planTasks(dailyPlan());
   if (!tasks.length) return ACT.extra();
   startStudy(tasks, "Bugünün dersi", () => { App.learn = { mode: "home" }; });
 };
@@ -372,6 +573,7 @@ ACT.mode = el => {
 ACT.delLesson = () => { if (!confirm("Bu ders silinsin mi?")) return; store.set("lessons", aiCats().filter(c => c.id !== App.learn.id)); App.learn = { mode: "home" }; renderLearn(); };
 function renderGram() {
   const g = C.GRAMMAR.find(x => x.id === App.learn.id); if (!g) { App.learn = { mode: "home" }; return renderLearnHome(); }
+  if (LANG === "en") { const gs = store.get("gramSeen", []); if (!gs.includes(g.id)) store.set("gramSeen", [...gs, g.id].slice(-100)); } // günlük mini alıştırma yalnız okunan derslerden
   const ex = g.ex || [];
   // gövde uygulamanın kendi içerik dosyasından gelir; yine de yalnız <b>, <i>, <br> etiketlerine izin ver
   const safeBody = esc(g.body).replace(/&lt;(\/?)(b|i|br)\s*\/?&gt;/g, "<$1$2>");
@@ -402,7 +604,7 @@ function startStudy(tasks, title, onExit, opts = {}) {
 }
 function studyShell(inner) {
   const s = App.learn.s;
-  return `<div class="row" style="margin-bottom:12px"><button class="btn sm ghost" data-act="studyExit" aria-label="Çık">✕</button>
+  return `<div class="row" style="margin-bottom:12px"><button class="btn sm ghost" data-act="studyExit" aria-label="Çık"${LANG === "en" ? ' style="min-width:48px"' : ""}>✕</button>
       <div class="studybar" role="progressbar" aria-valuemin="0" aria-valuemax="${s.tasks.length}" aria-valuenow="${s.i}"><i style="width:${Math.round(100 * s.i / s.tasks.length)}%"></i></div>
       <span class="small muted">${Math.min(s.i + 1, s.tasks.length)}/${s.tasks.length}</span></div>
     <div id="studyBox">${inner}</div>`;
@@ -425,9 +627,10 @@ function nextTask(grade, opts) {
   } else if (grade != null) {
     const key = t.type === "prod" ? t.item.nl + "|p" : t.item.nl;
     const r = SRS.mark(key, grade, opts);
-    // tanıma kartı iyi öğrenildiyse üretme kartını (TR→NL) başlat
-    if (t.type !== "prod" && r.b >= 2 && !SRS.get(t.item.nl + "|p")) { const all = SRS.all(); all[t.item.nl + "|p"] = { b: 0, lapses: 0, due: addDays(1) }; store.set("srs", all); }
-    if (grade === 0 && !s.retried.has(key) && !s.checkpoint) { s.retried.add(key); s.tasks.splice(Math.min(s.i + 4, s.tasks.length), 0, { ...t, isNew: false }); }
+    if (LANG === "en" && !store.get("startDay", "")) store.set("startDay", todayStr()); // en: ilk çalışılan kart = 1. gün (C6)
+    // tanıma kartı iyi öğrenildiyse üretme kartını (TR→NL) başlat — en: kutu ≥3'te (üretme kartı seli olmasın)
+    if (t.type !== "prod" && r.b >= (LANG === "en" ? 3 : 2) && !SRS.get(t.item.nl + "|p") && prodOk(t.item.nl)) { const all = SRS.all(); all[t.item.nl + "|p"] = { b: 0, lapses: 0, due: addDays(1) }; store.set("srs", all); }
+    if (grade === 0 && !s.retried.has(key) && !s.checkpoint && (LANG !== "en" || s.tasks.length < 35)) { s.retried.add(key); s.tasks.splice(Math.min(s.i + 4, s.tasks.length), 0, { ...t, isNew: false }); }
     if (grade === 2) s.right++;
     if (t.isNew) { const nt = store.get("newToday", {}); store.set("newToday", { d: todayStr(), n: (nt.d === todayStr() ? nt.n : 0) + 1 }); }
     Progress.addXP(grade === 2 ? 2 : grade === 1 ? 1 : 0);
@@ -438,7 +641,7 @@ function renderStudy() {
   const s = App.learn.s;
   if (s.i >= s.tasks.length) return finishStudy();
   const t = s.tasks[s.i];
-  const R = { flash: stFlash, prod: stProd, quiz: stQuiz, listen: stQuiz, dict: stDict, order: stOrder, speak: stSpeak }[t.type] || EXT.studyTypes[t.type] || stFlash;
+  const R = { flash: stFlash, prod: stProd, quiz: stQuiz, listen: stQuiz, dict: stDict, order: stOrder, speak: stSpeak, gramRead: stGramRead }[t.type] || EXT.studyTypes[t.type] || stFlash;
   R(t);
 }
 function finishStudy() {
@@ -479,6 +682,25 @@ ACT.flip = () => {
     <button class="btn" data-act="grade" data-g="0"><span aria-hidden="true">😕</span>Bilemedim</button><button class="btn" data-act="grade" data-g="1"><span aria-hidden="true">🤔</span>Zor</button><button class="btn primary" data-act="grade" data-g="2"><span aria-hidden="true">😊</span>Bildim</button></div>`;
 };
 ACT.grade = el => { haptic(10); nextTask(+el.dataset.g); };
+/** en (v8.2): hiç dilbilgisi dersi okunmadıysa günlük plandaki "📐 Bugünün dersi" kartı — dersi oturumun içinde açar */
+function stGramRead(t) {
+  const g = C.GRAMMAR.find(x => x.id === t.gid); if (!g) return nextTask(null);
+  const safeBody = esc(g.body).replace(/&lt;(\/?)(b|i|br)\s*\/?&gt;/g, "<$1$2>");
+  $("#v-ogren").innerHTML = studyShell(`<div class="card">
+      <span class="tag br">📐 Bugünün dersi · ${esc(g.lvl)}</span>
+      <h2 style="margin:8px 0 4px">${esc(g.t)}</h2>
+      <details id="grBody"><summary>📖 Oku (1–2 dk)</summary><div style="line-height:1.6;margin-top:8px">${safeBody}</div>
+        ${(g.ex || []).slice(0, 4).map(x => `<div class="phrase"><button class="ibtn" data-act="say" data-say="${esc(P(x[0]))}" aria-label="Sesli oku">🔊</button><div class="t"><b>${esc(P(x[0]))}</b><div class="okn small">${esc(P(x[2] || ""))}</div><div class="small">🇹🇷 ${esc(P(x[1]))}</div></div></div>`).join("")}</details>
+    </div>
+    <div id="fcBtns"><button class="btn primary block" data-act="gramReadDone">Okudum, devam →</button></div>`);
+  const d = $("#grBody"); if (d) d.open = true;
+}
+ACT.gramReadDone = () => {
+  const s = App.learn.s, t = s && s.tasks[s.i]; if (!t || t.type !== "gramRead") return;
+  const gs = store.get("gramSeen", []); if (!gs.includes(t.gid)) store.set("gramSeen", [...gs, t.gid].slice(-100));
+  store.set("gramDay", todayStr()); store.set("gramReadDay", todayStr()); // v8.3: sıradaki ders 3 gün sonra
+  nextTask(2);
+};
 function stProd(t) {
   const it = t.item;
   $("#v-ogren").innerHTML = studyShell(`
@@ -495,7 +717,7 @@ ACT.prodMic = el => {
   el.textContent = "⏹ Bitti";
   Speech.listen({ lang: store.get("srLang", L.sr), owner: "prod",
     onText: x => { $("#prodRes").textContent = x; },
-    onDone: x => { el.textContent = "🎤 Tekrar"; if (!x) return; const { pct, orderOk } = wordMatch(it.nl, x); $("#prodRes").innerHTML = `Telefon anladı: “${esc(x)}” — <b>${pct}%</b> eşleşti${orderOk === false ? " · 🧩 sıra farklı" : ""}`; },
+    onDone: x => { el.textContent = "🎤 Tekrar"; if (!x) return; const { pct, orderOk } = wm(it.nl, x); $("#prodRes").innerHTML = `Telefon anladı: “${esc(x)}” — <b>${pct}%</b> eşleşti${orderOk === false ? " · 🧩 sıra farklı" : ""}`; },
     onError: c => { el.textContent = "🎤 Söyle"; if (c !== "cancelled") $("#prodRes").textContent = Speech.errorText(c); } });
 };
 function stQuiz(t) {
@@ -540,7 +762,7 @@ ACT.dictCheck = () => {
   const it = s.tasks[s.i].item; const v = $("#dictIn").value;
   if (!v.trim()) { toast("Önce duyduğunu yaz"); return; }
   s.dictDone = s.i; $("#dictIn").readOnly = true;
-  const { pct, marks, orderOk } = wordMatch(it.nl, v);
+  const { pct, marks, orderOk } = wm(it.nl, v);
   const g = pct >= 90 ? 2 : pct >= 60 ? 1 : 0;
   haptic(g === 2 ? 15 : [20, 40, 20]);
   $("#dictRes").innerHTML = `<div class="score" style="font-size:1.8rem">${pct}%</div>
@@ -606,7 +828,7 @@ ACT.spMic = el => {
     onDone: x => {
       el.textContent = "🎤 Tekrar dene";
       if (!x) { $("#spRes").innerHTML = `<span class="muted">Ses duyulmadı.</span>`; return; }
-      const { pct, marks, orderOk } = wordMatch(it.nl, x);
+      const { pct, marks, orderOk } = wm(it.nl, x);
       App.learn.s.spGrade = pct >= 85 && orderOk !== false ? 2 : pct >= 50 ? 1 : 0;
       $("#spRes").innerHTML = `<div class="small muted">Telefon seni anladı mı?</div><div class="score" style="font-size:1.8rem">${pct}%</div>
         <div>${marks.map(m => `<span class="${m.ok ? "w-ok" : "w-bad"}">${esc(m.w)}</span>`).join(" ")}</div>
@@ -694,15 +916,17 @@ function renderInterp() {
   $("#micsRow").classList.toggle("hidden", live); $("#liveBtn").classList.toggle("hidden", !live);
   $("#lifelines").classList.toggle("hidden", live); // canlı altyazıda telefonun kendi sesi mikrofona girmesin
   ["in", "out"].forEach(d => { const b = d === "in" ? $("#micNL") : $("#micTR"); if (b && !b.classList.contains("live")) setMicUI(d, false); }); // alt yazılar öğrenilen dile göre
-  $("#lifelines").innerHTML = C.LIFELINES.map(l => `<button class="chip" data-act="show" data-nl="${esc(P(l[0]))}" data-tr="${esc(P(l[1]))}" data-ok="${esc(P(l[2] || ""))}" data-src="Hazır">${esc(P(l[0]))}</button>`).join("");
+  $("#lifelines").innerHTML = LANG === "en" ? C.LIFELINES.map(l => { const nl = P(l[0]), tr = P(l[1]), ok = P(l[2] || "");
+      return `<button class="chip ll" data-act="show" data-nl="${esc(nl)}" data-tr="${esc(tr)}" data-ok="${esc(ok)}" data-src="Hazır"><span>${esc(nl)}</span><span class="llt">${esc(llShort(nl, tr))}</span></button>`; }).join("") // v8.2: çip en fazla 2 satır; okunuş 📢 büyük ekranda
+    : C.LIFELINES.map(l => `<button class="chip" data-act="show" data-nl="${esc(P(l[0]))}" data-tr="${esc(P(l[1]))}" data-ok="${esc(P(l[2] || ""))}" data-src="Hazır">${esc(P(l[0]))}</button>`).join("");
   if (live) return renderLive();
   const ctx = App.interp.ctx, serious = SERIOUS.has(ctx);
   const fast = store.get("fastI", true);
   $("#v-ceviri").innerHTML = `
     <div class="ctxbar flat"><div class="seg" role="group" aria-label="Mod">${modeChips()}</div>
       <div class="row" style="margin-top:6px;gap:6px;flex-wrap:nowrap">${ctxSelect(ctx)}
-      ${serious ? `<span class="chip" style="color:var(--danger)" title="Ciddi durumda en iyi model kullanılır">🛡️ En iyi</span>` : `<button class="chip" data-act="fastToggle" aria-pressed="${fast}">⚡ ${fast ? "Hızlı: açık" : "Hızlı: kapalı"}</button>`}
-      <button class="chip" data-act="newConv" aria-label="Yeni konuşma">🧹</button></div></div>
+      ${serious ? `<span class="chip" style="color:var(--danger)" title="Ciddi durumda en iyi model kullanılır">🛡️ En iyi</span>` : LANG === "en" ? "" : `<button class="chip" data-act="fastToggle" aria-pressed="${fast}">⚡ ${fast ? "Hızlı: açık" : "Hızlı: kapalı"}</button>`}
+      <button class="chip" data-act="newConv" aria-label="Yeni konuşma">🧹</button></div>${accentChips()}</div>
     ${serious ? (L.belgium ? `<div class="dangerbox" style="margin-bottom:10px">Önemli konularda (sağlık, hukuk, polis, para) profesyonel tercüman iste — polis ve mahkemede hakkındır; hastane ve kurumlarda genelde sosyal tercüman ayarlanabilir, sor: <b>“Ik wil graag een tolk.”</b> <button class="btn sm" data-act="say" data-say="${AT.tolk[0]}">🔊</button><br><span class="small">Sayı, tarih, doz ve tutarları mutlaka yazılı iste: “${AT.write}”</span></div>`
       : `<div class="dangerbox" style="margin-bottom:10px">Önemli konularda (sağlık, hukuk, para) mümkünse profesyonel tercüman iste: <b>“${AT.tolk[0]}”</b> <span class="small">(${AT.tolk[1]})</span> <button class="btn sm" data-act="say" data-say="${AT.tolk[0]}">🔊</button><br><span class="small">Sayı, tarih, doz ve tutarları mutlaka yazılı iste: “${AT.write}” <button class="btn sm" data-act="say" data-say="${AT.write}">🔊</button></span></div>`) : ""}
     ${!store.get("apiKey", "") && !DEMO ? `<div class="warnbox" style="margin-bottom:10px">Çeviri için bir kez API anahtarı gir. <button class="btn sm" data-act="goKey">Anahtarı gir</button><br><span class="small">Aşağıdaki hazır cümleler internetsiz de çalışır.</span></div>` : ""}
@@ -713,6 +937,29 @@ function renderInterp() {
     </details>`;
   const sel = $("#ctxSel"); if (sel) sel.onchange = () => setCtx(sel.value);
   const last = thread[thread.length - 1]; if (last) scrollToBubble(last.id); else window.scrollTo(0, 0);
+}
+/** en hazır cümle çipinin altındaki kısa Türkçe anlam */
+function llShort(nl, tr) {
+  const t = String(nl).toLowerCase();
+  if (/repeat/.test(t)) return "🔁 Tekrar eder misiniz?";
+  if (/slow/.test(t)) return "🐢 Yavaş konuşur musunuz?";
+  if (/write|spell/.test(t)) return "✍️ Yazar mısınız?";
+  if (/e-?mail/.test(t)) return "📧 E-postayla gönderir misiniz?";
+  if (/moment|minute|second/.test(t)) return "⏳ Bir saniye";
+  if (/check|come back/.test(t)) return "🔎 Kontrol edip döneyim";
+  if (/english/.test(t)) return "🙏 İngilizcem iyi değil";
+  return tr;
+}
+/** en: dinleme aksanı tek dokunuşla (srLang anahtarı; Ben → Kurulum'daki seçimle aynı) */
+const ACC_FLAGS = { "en-US": "🇺🇸 Amerikan", "en-GB": "🇬🇧 İngiliz", "en-IN": "🇮🇳 Hint" };
+const accentChips = () => LANG !== "en" ? "" : `<div class="chips acc" role="group" aria-label="Dinlenecek aksan" style="margin-top:6px;flex-wrap:nowrap;overflow-x:auto"><span class="small muted" style="align-self:center">👂 Aksan:</span>${L.srOpts.map(([v]) => `<button class="chip" data-act="srAccent" data-v="${v}" aria-pressed="${store.get("srLang", L.sr) === v}">${ACC_FLAGS[v] || v}</button>`).join("")}</div>`;
+ACT.srAccent = el => { store.set("srLang", el.dataset.v); haptic(8); toast(`${ACC_FLAGS[el.dataset.v] || el.dataset.v} İngilizcesiyle dinliyorum`); $$("[data-act=srAccent]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === el.dataset.v))); };
+/** C9 (en): tercümanda günde 3 başarılı çeviri → seri günü */
+function interpStreak() {
+  if (LANG !== "en") return;
+  const d = todayStr(), c = store.get("interpOk", {}); const n = (c.d === d ? c.n : 0) + 1;
+  store.set("interpOk", { d, n });
+  if (n === 3 && Progress.markStreakDay) { Progress.markStreakDay(); App.renderStats(); toast("🔥 Bugün 3 çeviri — seri korundu"); }
 }
 function setCtx(k) {
   if (k !== App.interp.ctx) { conv = []; store.set("conv", conv); } // başka duruma geçince önceki konuşma bağlam olmasın
@@ -765,14 +1012,16 @@ async function interpProcess(dir, raw, { forceBest = false, bubbleId } = {}) {
   setBubble(id, `<div class="bub ${dir} prov">${head}<div class="big-tr partial" id="pt_${id}"></div><div class="skel" style="width:85%"></div><div class="skel" style="width:60%"></div>
     <button class="btn sm" data-act="cancelReq" data-f="interp:${id}">Vazgeç</button></div>`);
   scrollToBubble(id);
-  const model = forceBest ? MODEL_BEST : modelFor("interp", ctx);
+  const model = forceBest ? MODEL_BEST : modelFor("interp", ctx, dir); // D1: en iş/toplantı "out" → orta model
   const partialKey = dir === "in" ? "ceviri_tr" : "nl";
   try {
     // her balonun kendi isteği var: yeni cümle, bekleyen önceki çeviriyi iptal etmez
     const r = await callClaude({ feature: "interp:" + id, kind: dir, ctx, model, timeout: model === MODEL_FAST ? 20000 : 45000,
       onPartial: txt => { const el = document.getElementById("pt_" + id); const v = partialField(txt, partialKey); if (el && v) el.textContent = v; },
       system: dir === "in" ? sysInterpIn(ctx) : sysInterpOut(ctx), schema: SCHEMA[dir],
-      content: `Recent conversation:\n${ctxText()}\n\n${dir === "in" ? `ASR transcript (${store.get("srLang", L.sr)})` : "What the user wants to say (Turkish)"}: "${raw}"` });
+      content: LANG === "en" // D2: önceki konuşma <context>, kullanıcının yeni metni <user_text> — ikisi de veri, talimat değil
+        ? `<context>\nRecent conversation:\n${tagSafe(ctxText())}\n</context>\n\n${dir === "in" ? `ASR transcript (${store.get("srLang", L.sr)}) of what the other person said` : "What the user wants to say (Turkish)"}:\n<user_text>${tagSafe(raw)}</user_text>`
+        : `Recent conversation:\n${ctxText()}\n\n${dir === "in" ? `ASR transcript (${store.get("srLang", L.sr)})` : "What the user wants to say (Turkish)"}: "${raw}"` });
     redoMap.set(id, { dir, raw });
     const redo = model === MODEL_FAST ? `<button class="btn sm ghost" data-act="redo" data-id="${id}">🔁 Emin değilim — daha iyi çeviri</button>` : "";
     const addOk = !serious;
@@ -790,6 +1039,7 @@ async function interpProcess(dir, raw, { forceBest = false, bubbleId } = {}) {
         <div class="big-tr" style="margin-top:6px">${esc(r.ceviri_tr)}</div>
         ${r.niyet_tr ? `<div class="note">🎯 ${esc(r.niyet_tr)}</div>` : ""}
         ${r.onemli_uyari_tr ? `<div class="dangerbox" style="margin-top:8px">⚠️ ${esc(r.onemli_uyari_tr)}</div>` : ""}
+        ${LANG === "en" && scamSignals(raw + " " + r.duzeltilmis_nl).includes(ACCT_HIT) ? ACCT_WARN : ""}
         ${top.map(replyCard).join("")}
         <details style="margin-top:8px"><summary class="small">Diğer cevaplar, ${L.ad}si ve notlar</summary>
           ${more.map(replyCard).join("")}
@@ -803,7 +1053,7 @@ async function interpProcess(dir, raw, { forceBest = false, bubbleId } = {}) {
     } else {
       conv.push({ d: "out", nl: r.nl, ctx, at: Date.now() }); hist({ d: "out", nl: r.nl, tr: raw });
       setBubble(id, `<div class="bub out">
-        <span class="tag tr">🇹🇷 SEN</span> <span class="small">“${esc(raw)}”</span>
+        ${LANG === "en" ? salesWarn(r.uyari_tr) : ""}<span class="tag tr">🇹🇷 SEN</span> <span class="small">“${esc(raw)}”</span>
         <div style="margin-top:8px"><span class="tag nl">${L.flag} ŞÖYLE DE</span></div>
         <div class="tapzone" data-act="show" data-nl="${esc(r.nl)}" data-tr="${esc(r.tr_geri)}" data-ok="${esc(r.okunus)}">
           <div class="big-nl" style="margin-top:4px">${esc(r.nl)}</div><div class="okn" style="font-size:1.2rem">${esc(r.okunus)}</div></div>
@@ -815,6 +1065,7 @@ async function interpProcess(dir, raw, { forceBest = false, bubbleId } = {}) {
         ${redo}</div>`);
     }
     conv = conv.slice(-8); store.set("conv", conv);
+    interpStreak();
     scrollToBubble(id);
   } catch (e) {
     setBubble(id, e.code === "abort" ? `<div class="bub ${dir}">${head}<div class="small muted">İptal edildi.</div></div>` : `<div class="bub ${dir}">${head}${errBox(e)}<button class="btn sm" data-act="retry" data-id="${id}" data-dir="${dir}" data-raw="${esc(raw)}">↻ Tekrar dene</button></div>`);
@@ -848,26 +1099,49 @@ const SCEN_NL = [
 ];
 const SCEN_EN = [
   { g: "İş: kimya ticareti" },
-  { id: "en_tanis", e: "🤝", n: "Yeni tedarikçiyle tanışma (telefon)", d: "You are a sales manager at a foreign chemical producer (use a generic company name). The user calls for the first time: introductions, what the user's company does, which products (e.g. soda ash, caustic soda), typical quantities. Friendly, a bit fast." },
-  { id: "en_fiyat", e: "💲", n: "Fiyat ve ödeme şartı sorma", d: "You are a supplier's sales manager. The user asks for a price per metric ton and payment terms. You quote with an Incoterm (e.g. CIF), ask about quantity, destination port and payment (advance, 60 or 90 days, letter of credit). Never use real prices of real companies; invent plausible generic numbers." },
-  { id: "en_musteri", e: "🏭", n: "Müşteri numune ve COA istiyor", d: "You are a foreign customer's purchasing manager. You ask the user for a sample, COA, TDS and SDS, packaging (25 kg bags or big bags), lead time and price per ton." },
-  { id: "en_pazarlik", e: "🤝", n: "Pazarlık: indirim isteyen müşteri", d: "You are a customer pushing for a lower price and longer payment terms. You are polite but firm. The user should answer with conditional offers (e.g. a better price only for a larger quantity or a firm order this week) and payment options rather than plain discounts." },
-  { id: "en_sikayet", e: "⚠️", n: "Kalite / gecikme şikâyeti", d: "You are a customer complaining that a shipment is late or that a batch does not match the COA. You want an explanation and a solution." },
-  { id: "en_fuar", e: "🎪", n: "Fuarda stant sohbeti", d: "You are a visitor at a chemical trade fair stopping at the user's booth: short small talk, what they offer, exchange business cards, agree to follow up by e-mail." },
-  { id: "en_toplanti", e: "🖥️", n: "Online toplantı: açılış ve kapanış", d: "You are a foreign partner opening an online video meeting: check everyone can hear, short small talk, agenda, then at the end summarise next steps and ask the user to confirm by e-mail." },
+  { id: "en_tanis", e: "🤝", n: "Yeni tedarikçiyle tanışma (telefon)", d: "The user is the BUYER. You are a sales manager at a foreign chemical producer (use a generic company name). The user calls for the first time: introductions, what the user's company does, which products (e.g. soda ash, caustic soda), typical quantities. Friendly, a bit fast." },
+  { id: "en_fiyat", e: "💲", n: "Fiyat ve ödeme şartı sorma", d: "The user is the BUYER. You are a supplier's sales manager. The user asks for a price per metric ton and payment terms. You quote with an Incoterm (e.g. CIF), ask about quantity, destination port and payment (advance, 60 or 90 days, letter of credit). Never use real prices of real companies: use clearly fictional, round numbers (e.g. 400 USD per ton)." },
+  { id: "en_musteri", e: "🏭", n: "Müşteri numune ve COA istiyor", d: "The user is the SELLER. You are a foreign customer's purchasing manager. You ask the user for a sample, COA, TDS and SDS, packaging (25 kg bags or big bags), lead time and price per ton. Any numbers are clearly fictional, round numbers." },
+  { id: "en_pazarlik", e: "🤝", n: "Pazarlık: indirim isteyen müşteri", d: "The user is the SELLER. You are a customer pushing for a lower price and longer payment terms. You are polite but firm. The user should answer with conditional offers (e.g. a better price only for a larger quantity or a firm order this week) and payment options (cash / 60 days / 90 days) rather than plain discounts, and should never reveal costs or margins. Use clearly fictional, round numbers." },
+  { id: "en_rakip", e: "🥊", n: "\"Rakibiniz daha ucuz\" itirazı", d: "The user is the SELLER. You are a customer who says a competitor offered a lower price (clearly fictional, round numbers) and asks the user to match it. Push a little. The user should ask questions (same quality? same terms? delivery?), defend value, and offer only conditional concessions — never reveal costs." },
+  { id: "en_artis", e: "📈", n: "Fiyat artışı duyurusu", d: "The user is the SELLER and must tell you, a regular customer, that prices go up next month (clearly fictional, round numbers). You are unhappy, ask why, ask for the old price for one more order. The user should explain briefly (raw materials, freight), give a date, and offer conditional options." },
+  { id: "en_takip", e: "📞", n: "Cevapsız teklif takibi (telefon)", d: "The user is the SELLER. The user sent you an offer a week ago and you never answered. Now the user calls to follow up. You are busy and vague at first ('we are still checking'). The user should ask a clear question, agree a next step with a date, and not offer a discount just because you were silent." },
+  { id: "en_tahsilat", e: "💰", n: "Ödeme gecikmesi / tahsilat", d: "The user is the SELLER. You are a customer whose payment is two weeks overdue (clearly fictional, round amount). You give excuses and ask for more time. The user should stay polite but firm, ask for a concrete payment date and confirmation in writing." },
+  { id: "en_lc", e: "🏦", n: "L/C uyuşmazlığı (banka discrepancy)", d: "The user is the SELLER (the beneficiary). You are a bank officer (trade finance) calling about the user's letter of credit documents: you found a discrepancy (e.g. the date on the bill of lading or the product name on the invoice does not match the L/C). Explain step by step, slowly; ask how they want to proceed (correct documents, ask the buyer to accept the discrepancy)." },
+  { id: "en_gecikme", e: "🚢", n: "Tedarikçi sevkiyatı geciktiriyor", d: "The user is the BUYER. You are the supplier's export manager: the shipment will be two weeks late (vessel, production problem). The user worries about demurrage at the port and their own customer. Give vague answers first; the user should ask for a new date in writing, the reason, and who pays demurrage." },
+  { id: "en_iban", e: "🛡️", n: "Hesap değişikliği e-postası: bilinen numarayı ara", d: "The user is the BUYER. The user received an e-mail, apparently from the supplier, saying the supplier's bank account has changed and asking for payment to a new account. The user did NOT reply to that e-mail; instead the user calls the supplier on the phone number they already know (from earlier invoices / the contract). You play the REAL supplier's accounts department (accounts receivable clerk): friendly, a little busy. You did NOT change your bank details. When the user explains, you are surprised and concerned, confirm clearly that your bank details are unchanged and that nobody from your company sent that e-mail, ask the user not to pay to the new account, ask them to forward the e-mail to you (as an attachment) and to keep paying only to the account on the contract, and you thank the user for calling to check. Help the user practise: explaining the situation, asking a check question (e.g. the last invoice number or amount, which was not in the e-mail), and confirming in writing. Never ask the user for passwords, card numbers or the full account number on the phone." },
+  { id: "en_hassas", e: "🧪", n: "Hassas ürün: önce son kullanıcı belgesi", d: "The user is the SELLER of a sensitive chemical (e.g. hexamine). You are a new buyer who wants the price immediately and a quick shipment, and you are vague about the end use. The user should ask for the end-user certificate and company documents BEFORE talking about price, and confirm the exact product name in writing." },
+  { id: "en_sikayet", e: "⚠️", n: "Kalite / gecikme şikâyeti", d: "The user is the SELLER. You are a customer complaining that a shipment is late or that a batch does not match the COA. You want an explanation and a solution." },
+  { id: "en_fuar", e: "🎪", n: "Fuarda stant sohbeti", d: "The user is the SELLER at their own booth. You are a visitor at a chemical trade fair stopping at the booth: short small talk, what they offer, exchange business cards, agree to follow up by e-mail." },
+  { id: "en_toplanti", e: "🖥️", n: "Online toplantı: açılış ve kapanış", d: "The user is a business partner (buyer or seller — let the user choose). You are a foreign partner opening an online video meeting: check everyone can hear, short small talk, agenda, then at the end summarise next steps and ask the user to confirm by e-mail." },
   { g: "Seyahat & günlük" },
-  { id: "en_havalimani", e: "✈️", n: "Havalimanı ve pasaport kontrolü", d: "You are an airline check-in agent and then a passport control officer: ticket, luggage, purpose and length of the trip, hotel address." },
-  { id: "en_otel", e: "🏨", n: "Otelde giriş", d: "You are a hotel receptionist: reservation, passport, breakfast time, Wi-Fi, a small problem with the room." },
-  { id: "en_restoran", e: "🍽️", n: "Restoranda sipariş", d: "You are a waiter: table, menu, recommendations, allergies, drinks, the bill, card or cash." },
-  { id: "en_taksi", e: "🚕", n: "Taksi ve yol sorma", d: "You are a taxi driver and later a passer-by: destination, price, how long, simple directions." },
-  { id: "en_sohbet", e: "🍷", n: "İş yemeğinde sohbet", d: "You are a foreign business partner at dinner: small talk about travel, Turkey, family, food, the weather; nothing about prices." },
-  { id: "en_doktor", e: "🩺", n: "Yurt dışında eczane / doktor", d: "You are a pharmacist abroad: symptoms, how long, allergies, simple advice, how to take the medicine." }
+  { id: "en_havalimani", e: "✈️", n: "Havalimanı ve pasaport kontrolü", d: "The user is a traveller. You are an airline check-in agent and then a passport control officer: ticket, luggage, purpose and length of the trip, hotel address." },
+  { id: "en_otel", e: "🏨", n: "Otelde giriş", d: "The user is a hotel guest. You are a hotel receptionist: reservation, passport, breakfast time, Wi-Fi, a small problem with the room." },
+  { id: "en_restoran", e: "🍽️", n: "Restoranda sipariş", d: "The user is a guest. You are a waiter: table, menu, recommendations, allergies, drinks, the bill, card or cash." },
+  { id: "en_taksi", e: "🚕", n: "Taksi ve yol sorma", d: "The user is a passenger. You are a taxi driver and later a passer-by: destination, price, how long, simple directions." },
+  { id: "en_sohbet", e: "🍷", n: "İş yemeğinde sohbet", d: "The user is the host or guest at a business dinner. You are a foreign business partner: small talk about travel, Turkey, family, food, the weather; nothing about prices." },
+  { id: "en_doktor", e: "🩺", n: "Yurt dışında eczane / doktor", d: "The user is a patient abroad. You are a pharmacist: symptoms, how long, allergies, simple advice, how to take the medicine." }
 ];
 const SCEN = LANG === "en" ? SCEN_EN : SCEN_NL;
+/** en: "İş" grubundaki senaryo kimlikleri — iş rol oyunu orta modelle (D1) */
+const SCEN_BIZ = new Set((() => { const out = []; let biz = false; SCEN_EN.forEach(s => { if (s.g) biz = /^İş/.test(s.g); else if (biz) out.push(s.id); }); return out; })());
 let rp = null, rpToken = 0;
 function weekNo() { const d = new Date(); const start = new Date(d.getFullYear(), 0, 1); return Math.floor((d - start) / 604800000); }
 function currentMission() {
   const lvl = LV_ORDER.indexOf(profile().level || "A1");
+  if (LANG === "en") {
+    const done = store.get("missionsDone", []), wk = weekNo();
+    const pin = store.get("missionPin", null);
+    const pinned = pin && pin.w === wk && C.MISSIONS.find(m => m.id === pin.id);
+    if (pinned) return pinned;
+    const fit = C.MISSIONS.filter(m => LV_ORDER.indexOf(m.lvl) <= lvl + 1);
+    if (!fit.length) return null;
+    const own = fit.filter(m => m.lvl === (profile().level || "A1") && !done.includes(m.id));
+    const open = fit.filter(m => !done.includes(m.id)).sort((x, y) => LV_ORDER.indexOf(x.lvl) - LV_ORDER.indexOf(y.lvl));
+    const m = own[0] || open[0] || fit[wk % fit.length];
+    store.set("missionPin", { w: wk, id: m.id });
+    return m;
+  }
   const pool = C.MISSIONS.filter(m => LV_ORDER.indexOf(m.lvl) <= lvl + 1);
   if (!pool.length) return null;
   const done = store.get("missionsDone", []);
@@ -882,7 +1156,8 @@ function renderPractice() {
     ${m ? `<div class="card"><span class="tag br">🎯 Bu haftanın görevi · ${esc(m.lvl)}</span>
       <h2 style="margin:8px 0 4px">${esc(m.t)}</h2><div class="small muted">${esc(m.why || "")}</div>
       ${(m.phrases || []).map(x => `<div class="phrase"><button class="ibtn" data-act="say" data-say="${esc(P(x[0]))}" aria-label="Sesli oku">🔊</button><div class="t"><b>${esc(P(x[0]))}</b><div class="okn small">${esc(P(x[2] || ""))}</div><div class="small">🇹🇷 ${esc(P(x[1]))}</div></div></div>`).join("")}
-      <details style="margin-top:8px"><summary>✅ Yaptım! Nasıl geçti?</summary>
+      ${LANG === "en" ? (store.get("missionsDone", []).includes(m.id) ? `<div class="tag ok" style="margin-top:8px">✅ Bu haftanın görevi yapıldı (+10 ⭐)</div>` : `<button class="btn primary block" style="margin-top:8px" data-act="missionDone" data-id="${esc(m.id)}">✅ Yaptım</button>`) : ""}
+      <details style="margin-top:8px"><summary>${LANG === "en" ? "💬 Nasıl geçti? (isteğe bağlı)" : "✅ Yaptım! Nasıl geçti?"}</summary>
         <textarea id="debIn" placeholder="Türkçe anlat: ne oldu, nerede zorlandın?" style="margin-top:8px"></textarea>
         <button class="btn primary block" style="margin-top:8px" data-act="debrief" data-id="${esc(m.id)}">Koçuma anlat</button><div id="debOut" aria-live="polite"></div></details>
       <p class="small muted" style="margin:8px 0 0">Gerçek hayatta konuşmak en büyük puanı getirir: +10 ⭐</p></div>` : ""}
@@ -891,10 +1166,30 @@ function renderPractice() {
       <p class="muted small" style="margin-top:0">Yapay zekâ bir rol üstlenir, sen ${L.ad} cevap verirsin. Her cevabına puan ve düzeltme gelir.</p>
       <label class="f" for="rpLevel">Seviye</label>
       <select id="rpLevel">${["başlangıç", "orta", "ileri"].map(l => `<option value="${l}" ${l === store.get("rpLevel", "başlangıç") ? "selected" : ""}>${AT.rpLevels[l]}</option>`).join("")}</select>
-      <div class="opts">${SCEN.map(s => s.g ? `<h3 style="margin:10px 0 0">${esc(s.g)}</h3>` : `<button class="opt" data-act="rpStart" data-id="${s.id}">${s.e} <b>${esc(s.n)}</b></button>`).join("")}</div>
+      ${LANG === "en" ? scenGroupsEN() : `<div class="opts">${SCEN.map(s => s.g ? `<h3 style="margin:10px 0 0">${esc(s.g)}</h3>` : `<button class="opt" data-act="rpStart" data-id="${s.id}">${s.e} <b>${esc(s.n)}</b></button>`).join("")}</div>`}
     </div>`;
   $("#rpLevel").onchange = e => store.set("rpLevel", e.target.value);
+  $$("#v-pratik details.scen-g").forEach(d => d.addEventListener("toggle", e => { if (e.target !== d) return; const o = store.get("scenOpen", {}); o[d.dataset.g] = d.open; store.set("scenOpen", o); }));
+  $$("#v-pratik details.scen-more").forEach(d => d.addEventListener("toggle", () => store.set("scenMore", d.open)));
 }
+/** en (v8.2): 21 senaryo ≈3 ekran → gruplar katlanır; iş grubu açık, diğerleri kapalı (açık/kapalı hatırlanır) */
+function scenGroupsEN() {
+  const groups = []; SCEN_EN.forEach(s => { if (s.g) groups.push({ g: s.g, items: [] }); else if (groups.length) groups[groups.length - 1].items.push(s); });
+  const open = store.get("scenOpen", {});
+  const btn = s => `<button class="opt" data-act="rpStart" data-id="${s.id}">${s.e} <b>${esc(s.n)}</b></button>`;
+  // v8.3: iş grubunda ilk 6 senaryo görünür, kalanı "Daha fazla ▸" altında (açık/kapalı hatırlanır) — ana ekran kısalsın
+  const more = !!store.get("scenMore", false);
+  return groups.map((x, i) => `<details class="scen-g" data-g="${i}" ${(open[i] != null ? open[i] : i === 0) ? "open" : ""}><summary><b>${esc(x.g)}</b> <span class="small muted">(${x.items.length})</span></summary>
+    ${i === 0 && x.items.length > 7 ? `<div class="opts">${x.items.slice(0, 6).map(btn).join("")}</div>
+    <details class="scen-more" ${more ? "open" : ""}><summary class="small"><b>Daha fazla ▸</b> <span class="muted">(${x.items.length - 6} senaryo daha)</span></summary><div class="opts">${x.items.slice(6).map(btn).join("")}</div></details>`
+      : `<div class="opts">${x.items.map(btn).join("")}</div>`}</details>`).join("");
+}
+/** en: görevi tek dokunuşla tamamla (not isteğe bağlı) */
+function missionMark(id) {
+  const done = store.get("missionsDone", []); if (done.includes(id)) return false;
+  done.push(id); store.set("missionsDone", done); Progress.addXP(10); Progress.markStreakDay(); App.renderStats(); return true;
+}
+ACT.missionDone = el => { if (missionMark(el.dataset.id)) { haptic([20, 40, 20]); toast("🎉 Tebrikler! +10 ⭐"); } renderPractice(); };
 ACT.debrief = async el => {
   const txt = ($("#debIn").value || "").trim(); if (!txt) { toast("Kısaca anlat"); return; }
   const m = C.MISSIONS.find(x => x.id === el.dataset.id);
@@ -942,13 +1237,18 @@ async function rpTurn(line) {
   busyEl().innerHTML = spinner("…");
   const history = rp.lines.length ? rp.lines.map(l => (l.who === "role" ? "Role: " : "User: ") + l.t).join("\n") : "(none yet)";
   try {
-    const r = await callClaude({ feature: "practice", kind: "rp", system: sysRP(/^(vdab|mulakat|ladder|cv)/.test(String(rp.sc.id)) ? "career" : ""), schema: SCHEMA.rp, timeout: 60000,
-      content: `Scenario: ${rp.sc.d}\nLevel: ${rp.level}\n\nConversation so far:\n${history}\n\nUser's latest line: ${line}` });
+    const enBiz = LANG === "en" && SCEN_BIZ.has(rp.sc.id); // D1: iş senaryosu → core practice + ctx "is" → orta model
+    const r = await callClaude({ feature: "practice", kind: "rp", system: sysRP(/^(vdab|mulakat|ladder|cv)/.test(String(rp.sc.id)) ? "career" : (LANG === "en" && SCEN_BIZ.has(rp.sc.id)) ? "is" : ""), schema: SCHEMA.rp, timeout: 60000,
+      ...(enBiz ? { ctx: "is" } : {}),
+      content: LANG === "en" // D2: önceki konuşma <context>, kullanıcının yeni satırı <user_text>
+        ? `Scenario: ${rp.sc.d}\nLevel: ${rp.level}\n\n<context>\nConversation so far:\n${tagSafe(history)}\n</context>\n\nUser's latest line:\n<user_text>${tagSafe(line)}</user_text>`
+        : `Scenario: ${rp.sc.d}\nLevel: ${rp.level}\n\nConversation so far:\n${history}\n\nUser's latest line: ${line}` });
     if (my !== rpToken || !rp) return; // kullanıcı senaryodan çıktı: eski cevabı yazma
     busyEl().innerHTML = "";
     if (!cmd) { rp.lines.push({ who: "user", t: line }); rp.total += Math.max(0, Math.min(3, r.puan)); rp.n++; }
     rp.lines.push({ who: "role", t: r.musteri_nl });
     const p = Math.max(0, Math.min(3, r.puan));
+    if (LANG === "en" && r.kural_tr) rpPush(salesWarn(r.kural_tr));
     if (r.geri_bildirim_tr || r.dogru_hali_nl) rpPush(`<div class="note">${!cmd ? `<span aria-label="${p}/3">${"★".repeat(p)}${"☆".repeat(3 - p)}</span> ` : ""}${esc(r.geri_bildirim_tr)}
       ${r.dogru_hali_nl ? `<div style="margin-top:6px">✅ <b>${esc(r.dogru_hali_nl)}</b></div>${r.dogru_hali_okunus ? `<div class="okn small">${esc(r.dogru_hali_okunus)}</div>` : ""}${r.dogru_hali_tr ? `<div class="small">🇹🇷 ${esc(r.dogru_hali_tr)}</div>` : ""}${acts(r.dogru_hali_nl, r.dogru_hali_tr || "", r.dogru_hali_okunus || "", "Pratik düzeltme", { show: false })}` : ""}</div>`);
     rpPush(`<div class="bub in"><div class="mid-nl" style="font-size:1.2rem">${esc(r.musteri_nl)}</div><div class="okn small">${esc(r.musteri_okunus)}</div><div class="small muted">🇹🇷 ${esc(r.musteri_tr)}</div>${acts(r.musteri_nl, r.musteri_tr, r.musteri_okunus, "Pratik", { show: false })}</div>`);
@@ -1008,7 +1308,7 @@ function renderHelp() {
       <p class="small muted" style="margin-top:0">Uygulama hiçbir şey göndermez: metni kopyalayıp kendin gönderirsin.</p>
       <label class="f" for="wTo">Kime?</label><select id="wTo" data-keep="wto">${Object.entries(AT.wTo).map(([k, v]) => `<option value="${k}" ${k === H.wto ? "selected" : ""}>${v}</option>`).join("")}</select>
       <label class="f" for="wCh">Nereden?</label><select id="wCh" data-keep="wch"><option value="WhatsApp/SMS" ${H.wch !== "e-mail" ? "selected" : ""}>WhatsApp / SMS</option><option value="e-mail" ${H.wch === "e-mail" ? "selected" : ""}>E-posta</option></select>
-      <div class="chips" style="margin-top:10px" role="group" aria-label="Mod"><button class="chip" data-act="wMode" data-m="duzelt" aria-pressed="${H.wmode === "duzelt"}">✍️ Ben yazdım, düzelt</button><button class="chip" data-act="wMode" data-m="yaz" aria-pressed="${H.wmode !== "duzelt"}">🇹🇷 Türkçe anlatayım, sen yaz</button></div>
+      <div class="chips" style="margin-top:10px" role="group" aria-label="Mod"><button class="chip" data-act="wMode" data-m="duzelt" aria-pressed="${H.wmode === "duzelt"}">${LANG === "en" ? "✍️ Düzelt" : "✍️ Ben yazdım, düzelt"}</button><button class="chip" data-act="wMode" data-m="yaz" aria-pressed="${H.wmode !== "duzelt"}">${LANG === "en" ? "🇹🇷 Türkçe anlat" : "🇹🇷 Türkçe anlatayım, sen yaz"}</button></div>
       <textarea id="wIn" data-keep="win" placeholder="${H.wmode === "duzelt" ? `${L.ad} denemeni yaz — önce kendin dene, sonra düzeltelim` : L.belgium ? "Ne demek istediğini Türkçe yaz: ör. 'şefime bugün hasta olduğumu, doktora gideceğimi söyle'" : "Ne demek istediğini Türkçe yaz: ör. 'numuneyi kargoladığımızı, takip numarasını yarın göndereceğimi yaz'"}">${esc(H.win || "")}</textarea>
       <button class="btn primary block" style="margin-top:10px" data-act="wGo">Hazırla</button></div><div id="wOut" aria-live="polite"></div>`;
     keepFields();
@@ -1020,7 +1320,7 @@ function renderHelp() {
       <label class="f" for="pWho">Kimi arıyorsun?</label><input type="text" id="pWho" placeholder="${L.belgium ? "ör. aile hekimi, belediye, interim ajansı" : "ör. tedarikçi, müşteri, otel"}">
       <label class="f" for="pGoal">Ne istiyorsun? (Türkçe)</label><textarea id="pGoal" placeholder="ör. yarın için randevu almak istiyorum"></textarea>
       <button class="btn primary block" style="margin-top:10px" data-act="pGo">Hazırla</button></div><div id="pOut" aria-live="polite"></div>
-      <div class="card"><h3>🆘 Görüşmede kurtaran cümleler</h3>${AT.phone.map(x => `<div class="phrase"><button class="ibtn" data-act="say" data-say="${esc(x[0])}" aria-label="Sesli oku">🔊</button><div class="t"><b>${esc(x[0])}</b><div class="okn small">${esc(x[2])}</div><div class="small">🇹🇷 ${esc(x[1])}</div></div><button class="ibtn" data-act="show" data-nl="${esc(x[0])}" data-tr="${esc(x[1])}" aria-label="Büyük göster">📢</button></div>`).join("")}</div>`;
+      <div class="card"><h3>🆘 Görüşmede kurtaran cümleler</h3>${AT.phone.map(x => `<div class="phrase"><button class="ibtn" data-act="say" data-say="${esc(x[0])}" aria-label="Sesli oku">🔊</button><div class="t"><b>${esc(x[0])}</b><div class="okn small">${esc(x[2])}</div><div class="small">🇹🇷 ${esc(x[1])}</div></div><button class="ibtn" data-act="show" data-nl="${esc(x[0])}" data-tr="${esc(x[1])}"${LANG === "en" ? ` data-ok="${esc(x[2] || "")}"` : ""} aria-label="Büyük göster">📢</button></div>`).join("")}</div>`;
     return;
   }
   if (H.mode === "check") {
@@ -1051,7 +1351,7 @@ function renderHelp() {
       ${EXT.helpTiles.map(t => `<button class="tile" data-act="helpGo" data-m="${esc(t.mode)}"><div class="e">${esc(t.e)}</div><div class="n">${esc(t.n)}</div><div class="small muted">${esc(t.d || "")}</div></button>`).join("")}
     </div>
     ${L.belgium ? `<div class="dangerbox" style="margin-top:12px">🚨 Acil: <b>112</b> (ambulans, itfaiye) · <b>101</b> (polis) · Mesai dışı, acil olmayan doktor: <b>1733</b><br><span class="small">Şiddet: <b>1712</b> · Zehirlenme: <b>070 245 245</b> · Konuşmak için (7/24): <b>106</b> · İntihar düşüncesi: <b>1813</b> — numaraları kontrol et</span></div>`
-      : `<div class="dangerbox" style="margin-top:12px">🚨 Acil: <b>112</b> — Türkiye'de ve Avrupa'nın çoğunda genel acil numarası.<br><span class="small">Başka bir ülkedeysen oranın acil numarasını yolculuktan önce kontrol et.</span></div>`}`;
+      : `<p class="small muted" style="margin-top:12px">🚨 Acil: <b>112</b> (Türkiye ve Avrupa'nın çoğu; yurt dışında oranın numarasını kontrol et)</p>`}`;
 }
 /** Formdaki alanları App.help içinde tut: yeniden çizimde kaybolmasın */
 function keepFields() { $$("#v-yardim [data-keep]").forEach(el => { const f = () => { App.help[el.dataset.keep] = el.value; }; el.addEventListener("input", f); el.addEventListener("change", f); }); }
@@ -1065,20 +1365,66 @@ ACT.helpGo = el => {
 };
 ACT.docClear = () => { docFiles = []; docFilesInfo(); };
 /** Yapıştırılan metinde kimlik numarası ve hesap numarasını göndermeden önce gizle (son 4 hane kalır) */
+/** TC kimlik no sağlama (11 hane, ilk hane 1-9, 10. ve 11. hane kontrol hanesi) — lot/sipariş numaraları maskelenmesin */
+function tcValid(s) {
+  if (!/^[1-9]\d{10}$/.test(s)) return false;
+  const d = s.split("").map(Number);
+  const d10 = ((d[0] + d[2] + d[4] + d[6] + d[8]) * 7 - (d[1] + d[3] + d[5] + d[7])) % 10;
+  return (d10 + 10) % 10 === d[9] && d.slice(0, 10).reduce((a, b) => a + b, 0) % 10 === d[10];
+}
 function maskPII(t) {
+  if (LANG === "en") // Belçika rijksregister deseni burada lot numaralarını yiyordu: yerine TC kimlik no + her ülkenin IBAN'ı
+    return String(t) // IBAN: küçük harf, tire ve çift boşluk da yakalanır (grup arası [ \t-]); en az 10 rakam şartı düz yazıyı korur
+      .replace(/\b[1-9]\d{10}\b/g, m => tcValid(m) ? "[TC kimlik no gizlendi]" : m)
+      .replace(/\b[A-Z]{2}\d{2}(?:[ \t-]{0,3}[A-Z0-9]{4}){2,7}(?:[ \t-]{0,3}[A-Z0-9]{1,4})?\b/gi, m => {
+        // v8.3: aday arkasındaki kelimeyi de yutabiliyordu ("… 7034 Bank Fortis" → "…RTIS"). Ülkenin IBAN uzunluğuna kırp;
+        // bilinmeyen ülkede 15–34 arası mod-97 tutan en uzun parça, o da yoksa sondaki yalnız-harf gruplarını at. Son 4 = gerçek son 4 hane.
+        const LEN = { BE: 16, NL: 18, AT: 20, CH: 21, DE: 22, GB: 22, AE: 23, ES: 24, TR: 26, IR: 26, FR: 27, IT: 27, PL: 28 };
+        const mod97 = x => { let r = 0; for (const ch of x.slice(4) + x.slice(0, 4)) { const v = parseInt(ch, 36); if (isNaN(v)) return false; r = (r * (v > 9 ? 100 : 10) + v) % 97; } return r === 1; };
+        const c = m.replace(/[\s-]/g, "").toUpperCase(), want = LEN[c.slice(0, 2)];
+        let n = 0;
+        if (want && c.length >= want) n = want;
+        else if (!want) for (let k = Math.min(34, c.length); k >= 15 && !n; k--) if (mod97(c.slice(0, k))) n = k;
+        if (!n) { const g = m.split(/[ \t-]+/); while (g.length > 3 && /^[A-Z]+$/i.test(g[g.length - 1])) g.pop(); n = g.join("").length; }
+        const iban = c.slice(0, n); if ((iban.match(/\d/g) || []).length < 10) return m;
+        let cut = 0; for (let seen = 0; cut < m.length && seen < n; cut++) if (/[A-Z0-9]/i.test(m[cut])) seen++;
+        const rest = m.slice(cut);
+        return iban.slice(0, 4) + " **** **** " + iban.slice(-4) + (/^[A-Z0-9]/i.test(rest) ? " " : "") + rest;
+      });
   return String(t)
     .replace(/\b\d{2}[.\s]?\d{2}[.\s]?\d{2}[-\s]?\d{3}[.\s]?\d{2}\b/g, "[rijksregisternummer gizlendi]")
     .replace(/\b([A-Z]{2}\d{2})[\s]?((?:\d{4}[\s]?){2,6})(\d{4})\b/gi, (m, a, mid, last) => a + " **** **** " + last);
 }
+const ACCT_HIT = "hesap değişikliği";
+/** en: banka hesabı değişikliği dili (İngilizce + Türkçe) — BEC (sahte "hesabımız değişti" e-postası) kalkanı; canlı altyazı da kullanır (window) */
+const ACCT_CHANGE_RE = (() => { const S = /\b(new|updated?|changed?|change of|change in|different|alternative)\s+(our\s+|the\s+)?(bank(ing)?\s+(account|details|info(rmation)?)|(account|acct|a\/c)\s+(details|number|no\.?)|beneficiary|remittance\s+details|IBAN|SWIFT)\b|\b(bank(ing)?|account|payment)\s+details\s+(have|has)\s+(been\s+)?(changed|updated)|\bSWIFT\s+(code\s+)?(change|update)|\b(revised|updated|new)\s+bank\s+(letter|details|information)\b|\bSWIFT\b[^.]{0,40}\b(updated|changed)\b|\bdisregard\b[^.]{0,60}\bbank\s+(details|account|information)\b|\bno longer\s+(use|using)\s+(\S+\s+){0,3}(bank\s+)?(account|IBAN)\b|\b(have|has)\s+(now\s+)?(switched|changed|moved)\s+(our\s+)?banks?\b|\bhesap\s+değişikli|\byeni\s+(IBAN|banka\s+hesab)|\b(hesap|banka)\s+(numaramız|numarası|bilgilerimiz|bilgileri|hesabımız|hesabı)\s+değiş|IBAN\S*\s*değiş|\bbundan\s+sonra\s+(tüm\s+)?ödemeler\S*[^.]{0,40}(hesab|IBAN)/i, W = /\b(new|other|alternative|following|different)\s+(bank\s+)?(account|acct|a\/c)\b(?!\s+(manager|executive|team|rep|representative|director|management)\b)|\baccount\s+(is|has been|was)\s+(blocked|closed|frozen|suspended|under audit)\b|\bswitched\s+banks?\b|\bchanged?\s+(our\s+)?banks?\b|\b(aşağıdaki|yeni|diğer)\s+hesab|\bbloke\b|\bhesab\S*\s+değil\b|\byeni\s+hesap/i, P = /\b(pay|paying|payment|payments|remit|remittance|transfer|wire|invoice|IBAN|SWIFT|beneficiary)\b|\b[A-Z]{2}\d{2}\s?\d{4}|öde|havale/i; return { test: t => S.test(t) || (W.test(t) && P.test(t)) }; })(); // güçlü desen tek başına; zayıf desen (ör. "new account", "bloke") yalnız ödeme kelimesiyle — yanlış alarm olmasın
 /** Model ne derse desin: bağlantı, IBAN ya da tipik dolandırıcılık kelimesi varsa sabit uyarı göster */
 function scamSignals(text) {
   const t = String(text || "");
   const hits = [];
   if (/https?:\/\/|www\.|bit\.ly|\.link\b/i.test(t)) hits.push("bağlantı (link)");
+  if (LANG === "en") {
+    // IBAN: önce boşluk/tire normalize, büyük-küçük harf fark etmez; en az 10 rakam (düz yazı "No25 with your best" IBAN sayılmasın)
+    let iban = false; t.replace(/[\s-]+/g, " ").replace(/\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b/gi, m => { if ((m.match(/\d/g) || []).length >= 10) iban = true; return m; });
+    if (iban || /\bIBAN\b/i.test(t)) hits.push("hesap numarası (IBAN)");
+    // ödeme aciliyeti (sert) — IBAN ile birlikteyse hesap değişikliği gibi kırmızı say; "ASAP" tek başına yumuşak sinyal
+    const urgHard = /kindly remit|urgent(ly)?\s+(payment|transfer|wire)|wire\s+(it\s+|the\s+(funds|money|payment|amount)\s+)?(immediately|today|urgently)|pay(ment)?\s+(immediately|today|urgently)|remit\b.*\burgent|transfer\s+(immediately|today)|confidential(ly)?\s+(payment|transfer)|\b(keep|treat)\s+(this|it)\s+(as\s+)?(confidential|private|between us)\b|\bin a meeting\b|\bcan'?(not|t) talk\b|\bjust (do|make) the (transfer|payment)\b|acil\s+(ödeme|havale)|hemen\s+(öde|havale)|bugün\s+içinde\s+(öde|havale)/i.test(t);
+    const urgSoft = /\bASAP\b|as soon as possible|bugün\s+içinde|\bacil\b/i.test(t);
+    if (ACCT_CHANGE_RE.test(t) || (iban && urgHard)) hits.push(ACCT_HIT);
+    if (urgHard || urgSoft) hits.push("dolandırıcılarda sık görülen kelimeler");
+    return hits;
+  }
   if (/\bBE\d{2}[\s\d]{8,}/i.test(t)) hits.push("hesap numarası (IBAN)");
   if (/itsme|bpost|pakket|colis|douane|betaal (nu|vandaag|onmiddellijk)|uw rekening (is )?geblokkeerd|verifieer|bevestig uw gegevens/i.test(t)) hits.push("dolandırıcılarda sık görülen kelimeler");
   return hits;
 }
+window.ACCT_CHANGE_RE = ACCT_CHANGE_RE; window.scamSignals = scamSignals; window.ACCT_HIT = ACCT_HIT; // D3: canlı altyazı (live.js)
+/** en: hesap değişikliği yakalanınca model ne derse desin gösterilen sabit kırmızı uyarı */
+const ACCT_WARN = `<div class="dangerbox" role="alert" style="margin-top:8px;border:2px solid var(--danger)">🏦 <b>Hesap değişikliği:</b> mesajdaki numarayı kullanma; firmayı bildiğin numaradan ara ve mesajda geçmeyen bir soruyla doğrula. Yeni hesaba ilk ödemede çift onay.<div class="small" style="margin-top:4px;font-weight:400">Bu uyarı metindeki kelimelerden otomatik çıktı; cümleyi kendin de kontrol et.</div></div>`;
+/** en (v8.2): uzun formdan sonra sonuç ekranın altında kalmasın */
+function resultIntoView(sel) { requestAnimationFrame(() => { const el = $(sel); if (el && el.firstElementChild) el.scrollIntoView({ block: "start", behavior: "smooth" }); }); }
+/** C1: satış kuralı uyarısı (sonucun üstünde sarı kutu) */
+const salesWarn = t => t ? `<div class="salesbox" role="alert">⚠️ <b>Satış kuralı:</b> ${esc(t)}</div>` : "";
 ACT.docGo = async el => {
   const rawText = ($("#docText").value || "").trim();
   const type = $("#docType").value, text = maskPII(rawText), note = maskPII(($("#docNote").value || "").trim());
@@ -1091,22 +1437,35 @@ ACT.docGo = async el => {
     const r = await callClaude({ feature: "doc", kind: "doc", system: sysDoc(type), schema: SCHEMA.doc, content: blocks, timeout: 120000, model: MODEL_BEST });
     docFiles = []; docFilesInfo();
     if (type === "mesaj" && r.risk === "yesil") r.risk = "sari"; // mesajlarda temkinli ol
+    const EN = LANG === "en";
+    if (EN && ["lc", "fatura", "sozlesme"].includes(type) && r.risk === "yesil") r.risk = "sari"; // en: para/evrak belgesinde taban sarı
     const sig = scamSignals(rawText + " " + r.tutarlar.map(x => x.alinti_nl).join(" ") + " " + r.tarihler.map(x => x.alinti_nl).join(" ") + " " + r.odeme_uyarisi_tr);
+    // en (D3): hesap değişikliği dili (ya da IBAN + ödeme aciliyeti) → model ne derse desin kırmızı
+    const acct = EN && sig.includes(ACCT_HIT); if (acct) r.risk = "kirmizi";
+    const IBAN_SIG = "hesap numarası (IBAN)", onlyIban = EN && !acct && sig.length > 0 && sig.every(x => x === IBAN_SIG);
+    const otherSig = sig.filter(x => x !== IBAN_SIG && x !== ACCT_HIT);
+    // en: B2B dili — tüketici "resmî siteden kontrol et" yerine sözleşme/önceki fatura + bilinen numara
+    const shieldEN = acct ? (otherSig.length ? `<div class="dangerbox" style="margin-top:8px">🛡️ <b>Ayrıca:</b> bu belgede ${esc(otherSig.join(", "))} var. Linkten ödeme ya da giriş yapma.</div>` : "")
+      : onlyIban ? `<div class="note" style="margin-top:8px">🏦 Belgede hesap numarası (IBAN) var. Ödemeden önce bu firmanın <b>önceki faturası ya da sözleşmesindeki</b> hesapla karşılaştır; farklıysa ödeme yapma, firmayı bildiğin numaradan ara.</div>`
+      : (sig.length || r.odeme_uyarisi_tr) ? `<div class="dangerbox" style="margin-top:8px">🛡️ <b>Ödeme kontrolü:</b> ${sig.length ? `bu belgede ${esc(sig.join(", "))} var. ` : ""}Linkten ödeme ya da giriş yapma. Banka bilgisini yalnız sözleşmeden / önceki faturadan al; e-postada bir değişiklik varsa firmayı bildiğin numaradan (e-postadakinden değil) ara.</div>` : "";
     const riskTxt = { yesil: "🟢 Bilgi amaçlı", sari: "🟡 Bir şey yapman gerekebilir", kirmizi: "🔴 Önemli / acil — yardım al" }[r.risk] || "🟡";
     $("#docOut").innerHTML = `<div class="card risk-${esc(r.risk)}">
       <div class="row between"><b>${esc(r.belge_turu)}</b><span class="tag ${r.risk === "kirmizi" ? "bad" : r.risk === "yesil" ? "ok" : "warn"}">${riskTxt}</span></div>
       ${r.gonderen ? `<div class="small muted">Gönderen: ${esc(r.gonderen)}</div>` : ""}
       <p style="font-size:1.05rem">${esc(r.ozet_tr)}</p>
+      ${acct ? ACCT_WARN : ""}
       ${r.risk_neden_tr ? `<div class="${r.risk === "kirmizi" ? "dangerbox" : "note"}">${esc(r.risk_neden_tr)}</div>` : ""}
       ${r.yapilacaklar.length ? `<h3 style="margin-top:12px">${r.eylem_gerekli ? "Yapman gerekenler" : "Öneriler"}</h3><ol>${r.yapilacaklar.map(x => `<li>${esc(x)}</li>`).join("")}</ol>` : ""}
       ${r.tarihler.length ? `<h3>📅 Belgedeki tarihler</h3>${r.tarihler.map(d => `<div class="phrase"><div class="t"><b>${esc(d.tarih)}</b> — ${esc(d.amac_tr)}<div class="small muted">“${esc(d.alinti_nl)}”</div></div></div>`).join("")}` : ""}
       ${r.tutarlar.length ? `<h3>💶 Belgedeki tutarlar</h3>${r.tutarlar.map(d => `<div class="phrase"><div class="t"><b>${esc(d.tutar)}</b> — ${esc(d.aciklama_tr)}<div class="small muted">“${esc(d.alinti_nl)}”</div></div></div>`).join("")}` : ""}
       ${r.odeme_uyarisi_tr ? `<div class="dangerbox" style="margin-top:8px">💳 ${esc(r.odeme_uyarisi_tr)}</div>` : ""}
-      ${sig.length || r.odeme_uyarisi_tr ? `<div class="dangerbox" style="margin-top:8px">🛡️ <b>Dolandırıcılık kontrolü:</b> ${sig.length ? `bu belgede ${esc(sig.join(", "))} var. ` : ""}Mesajdaki linke tıklama, oradan ödeme yapma. Hesap numarasını eski faturan ya da resmî siteden kontrol et; şüphelenirsen bilinen numaradan ara. ${L.belgium ? "Şüpheli mesajı <b>suspicious@safeonweb.be</b> adresine iletebilirsin (kontrol et)." : ""}</div>` : ""}
+      ${EN ? shieldEN : sig.length || r.odeme_uyarisi_tr ? `<div class="dangerbox" style="margin-top:8px">🛡️ <b>Dolandırıcılık kontrolü:</b> ${sig.length ? `bu belgede ${esc(sig.join(", "))} var. ` : ""}Mesajdaki linke tıklama, oradan ödeme yapma. Hesap numarasını eski faturan ya da resmî siteden kontrol et; şüphelenirsen bilinen numaradan ara. ${L.belgium ? "Şüpheli mesajı <b>suspicious@safeonweb.be</b> adresine iletebilirsin (kontrol et)." : ""}</div>` : ""}
+      ${EN && type === "lc" ? `<div class="note" style="margin-top:8px">🏦 Bu bir banka görüşü değildir; evrakı UCP 600'e göre bankan inceler.</div>` : ""}
       ${r.kime_sor_tr ? `<div class="note">❓ Kime sorabilirsin: ${esc(r.kime_sor_tr)}</div>` : ""}
       ${r.cevap_taslagi_nl ? `<h3 style="margin-top:12px">✉️ Cevap taslağı (kendin gönderirsin)</h3><div class="copybox">${esc(r.cevap_taslagi_nl)}</div><div class="small">🇹🇷 ${esc(r.cevap_taslagi_tr)}</div><button class="btn sm" style="margin-top:6px" data-act="copy" data-text="${esc(r.cevap_taslagi_nl)}">📋 Kopyala</button>` : ""}
       ${r.yeni_kelimeler.length ? `<details style="margin-top:10px"><summary>📚 Bu belgedeki yeni kelimeler (${r.yeni_kelimeler.length})</summary>${r.yeni_kelimeler.map(w => `<div class="phrase"><div class="t"><b>${esc(w.nl)}</b><div class="okn small">${esc(w.okunus)}</div><div class="small">🇹🇷 ${esc(w.tr)}</div></div><button class="ibtn" data-act="add" data-nl="${esc(w.nl)}" data-tr="${esc(w.tr)}" data-ok="${esc(w.okunus)}" data-src="Belge" aria-label="Kartlarıma ekle">➕</button></div>`).join("")}</details>` : ""}
       <p class="small muted" style="margin-bottom:0">Tarih ve tutarları belgenin kendisinden bir daha kontrol et. Yapay zekâ yanılabilir.</p></div>`;
+    if (EN) resultIntoView("#docOut");
     Progress.addXP(3);
   } catch (e) { $("#docOut").innerHTML = e.code === "abort" ? "" : errBox(e); }
   el.disabled = false;
@@ -1116,19 +1475,23 @@ ACT.wMode = el => {
   const i = $("#wIn"); if (i) App.help.win = i.value; App.help.wto = $("#wTo").value; App.help.wch = $("#wCh").value;
   App.help.wmode = el.dataset.m; renderHelp();
 };
+/** Mesaj yazıcının alıcı tarifleri: en'de RECIPIENTS_EN (core.js), nl'de eski Belçika tarifleri */
+const wRecipients = () => (LANG === "en" && typeof RECIPIENTS_EN !== "undefined") ? RECIPIENTS_EN : RECIPIENTS;
 ACT.wGo = async el => {
   const txt = ($("#wIn").value || "").trim(); if (!txt) { toast("Önce yaz"); return; }
   el.disabled = true; $("#wOut").innerHTML = spinner("Hazırlanıyor…");
   try {
     const r = await callClaude({ feature: "write", kind: "write", system: sysWrite($("#wTo").value, $("#wCh").value), schema: SCHEMA.write,
-      content: `Recipient: ${RECIPIENTS[$("#wTo").value]}\nChannel: ${$("#wCh").value}\nMode: ${App.help.wmode === "duzelt" ? "duzelt" : "yaz"}\nText: """${txt}"""` });
-    const full = (r.konu_nl ? `Onderwerp: ${r.konu_nl}\n\n` : "") + r.mesaj_nl;
-    $("#wOut").innerHTML = `<div class="card">${r.uyari_tr ? `<div class="dangerbox" style="margin-bottom:8px">⚠️ ${esc(r.uyari_tr)}</div>` : ""}
+      content: `Recipient: ${wRecipients()[$("#wTo").value] || $("#wTo").value}\nChannel: ${$("#wCh").value}\nMode: ${App.help.wmode === "duzelt" ? "duzelt" : "yaz"}\n${LANG === "en" ? `Text:\n<user_text>${tagSafe(maskPII(txt))}</user_text>` : `Text: """${txt}"""`}` });
+    const full = (r.konu_nl ? `${LANG === "en" ? "Subject" : "Onderwerp"}: ${r.konu_nl}\n\n` : "") + r.mesaj_nl;
+    const wAcct = LANG === "en" && scamSignals(txt).includes(ACCT_HIT); // en (D3): yapıştırılan e-postada hesap değişikliği
+    $("#wOut").innerHTML = `<div class="card">${wAcct ? ACCT_WARN : ""}${r.uyari_tr ? (LANG === "en" ? salesWarn(r.uyari_tr) : `<div class="dangerbox" style="margin-bottom:8px">⚠️ ${esc(r.uyari_tr)}</div>`) : ""}
       ${r.konu_nl ? `<div class="small muted">Konu: <b>${esc(r.konu_nl)}</b></div>` : ""}<div class="copybox">${esc(r.mesaj_nl)}</div>
       <div class="small" style="margin-top:6px">🇹🇷 ${esc(r.geri_ceviri_tr)}</div>
       ${r.aciklama_tr ? `<div class="note">💡 ${esc(r.aciklama_tr)}</div>` : ""}
       <div class="row" style="margin-top:8px"><button class="btn primary" data-act="copy" data-text="${esc(full)}">📋 Kopyala</button><button class="btn" data-act="say" data-say="${esc(r.mesaj_nl)}">🔊 Dinle</button></div>
       <p class="small muted" style="margin-bottom:0">[Köşeli parantezleri] kendin doldur. Göndermeden önce bir kez oku.</p></div>`;
+    if (LANG === "en") resultIntoView("#wOut");
     Progress.addXP(2);
   } catch (e) { $("#wOut").innerHTML = e.code === "abort" ? "" : errBox(e); }
   el.disabled = false;
@@ -1161,6 +1524,14 @@ const onbSeen = code => { try { return localStorage.getItem(code === "nl" ? "dk_
 function switchLang(code, tabName) {
   if (!LANGS[code]) return;
   try { if (window.LiveUI && LiveUI.isActive && LiveUI.isActive()) LiveUI.stop("tab"); Speech.stopAll(); } catch { }
+  // C8: geçici dil (sessionStorage dk_lang_tmp) kalıcı seçimi ezmesin — lang.js yardımcısı (demo adresinde parametreler korunsun diye elle)
+  if (typeof window.setLangPermanent === "function" && !DEMO) {
+    // v8.3 (en): İngilizceyi kalıcı yaparken ?mode=live gibi parametreler düşmesin (nl'ye dönüş: eski davranış, yalnız ?tab=)
+    let extra = "";
+    if (code === "en") { const q = new URLSearchParams(location.search); q.delete("lang"); q.delete("tab"); extra = q.toString(); }
+    window.setLangPermanent(code, tabName || "", extra); return;
+  }
+  try { sessionStorage.removeItem("dk_lang_tmp"); } catch { }
   store.set("lang", code);
   const q = new URLSearchParams(location.search); q.delete("lang"); q.delete("tab"); q.delete("mode");
   if (tabName) q.set("tab", tabName);
@@ -1203,7 +1574,7 @@ function renderBen() {
     <details class="card" ${!p.name ? "open" : ""}><summary>👤 Benim durumum</summary>
       <p class="small muted">Dersler, pratikler ve çeviriler buna göre kişiselleşir. Sadece bu telefonda kalır. Kimlik numarası yazma.</p>
       ${fld("name", "Adın", `ör. ${L.defaultName}`)}
-      ${L.belgium ? fld("aliases", "İş yerinde sana nasıl sesleniyorlar?", "ör. Oz, Oguz — canlı altyazı adını tanısın") : fld("aliases", "Sana nasıl sesleniyorlar?", "ör. Umit, Oomit — canlı altyazı adını tanısın")}
+      ${L.belgium ? fld("aliases", "İş yerinde sana nasıl sesleniyorlar?", "ör. Oz, Oguz — canlı altyazı adını tanısın") : fld("aliases", "Sana nasıl sesleniyorlar?", "ör. Umit, Oomit")}
       ${fld("job", "Şu anki işin", L.belgium ? "" : "ör. kimya satış / iş geliştirme")}
       <label class="f" for="p_level">${L.ad} seviyen (tahmini)</label><select id="p_level">${["A1", "A2", "B1", "B2"].map(l => `<option ${p.level === l ? "selected" : ""}>${l}</option>`).join("")}</select>
       <label class="f" for="p_goal">Günlük hedef</label><select id="p_goal">${[[5, "5 dk (10 kart)"], [10, "10 dk (20 kart)"], [20, "20 dk (40 kart)"]].map(([v, l]) => `<option value="${v}" ${+p.goal === v ? "selected" : ""}>${l}</option>`).join("")}</select>
@@ -1342,11 +1713,11 @@ ACT.wipeAll = async () => {
   try { if (navigator.serviceWorker) for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister(); } catch { }
   location.replace(location.pathname);
 };
-ACT.resetProg = () => { if (confirm("Ders ilerlemesi, puan ve seri sıfırlansın mı? (Kaydettiklerin ve profilin kalır)")) { ["srs", "xp", "days", "today", "newToday", "cpBest", "gramDay"].forEach(k => store.del(k)); App.renderStats(); renderBen(); toast("Sıfırlandı"); } };
+ACT.resetProg = () => { if (confirm("Ders ilerlemesi, puan ve seri sıfırlansın mı? (Kaydettiklerin ve profilin kalır)")) { ["srs", "xp", "days", "today", "newToday", "cpBest", "gramDay", ...(LANG === "en" ? ["startDay", "gramSeen"] : [])].forEach(k => store.del(k)); App.renderStats(); renderBen(); toast("Sıfırlandı"); } };
 const LOG_KEYS = ["dk_hist", "dk_conv", "dk_liveLogs", "dk_liveDraft", "dk_en_hist", "dk_en_conv", "dk_en_liveLogs", "dk_en_liveDraft"];
 ACT.export = () => {
   const withLogs = $("#exp_logs") && $("#exp_logs").checked;
-  const data = {}; try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.startsWith("dk_") && k !== "dk_apiKey" && !k.startsWith("dk_bad_") && (withLogs || !LOG_KEYS.includes(k))) data[k] = localStorage.getItem(k); } } catch { }
+  const data = {}; try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.startsWith("dk_") && k !== "dk_apiKey" && !k.startsWith("dk_bad_") && !k.startsWith("dk_en_bad_") && (withLogs || !LOG_KEYS.includes(k))) data[k] = localStorage.getItem(k); } } catch { }
   const a = document.createElement("a"); const url = URL.createObjectURL(new Blob([JSON.stringify({ app: "dil-koprusu", v: 3, at: new Date().toISOString(), data })], { type: "application/json" }));
   a.href = url; a.download = `dil-koprusu-yedek-${todayStr()}.json`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
   toast(withLogs ? "Yedek indirildi — kişisel konuşmalar içerir, dikkatli sakla" : "Yedek indirildi — profil ve CV bilgilerini içerir, kimseyle paylaşma");
@@ -1360,12 +1731,19 @@ $("#importFile").addEventListener("change", async e => {
     if (!confirm("Bu yedek yüklensin mi? Şu anki ilerleme değişecek.")) return;
     let n = 0;
     Object.entries(j.data).forEach(([k, v]) => {
-      if (!k.startsWith("dk_") || k === "dk_apiKey" || typeof v !== "string") return;
+      if (!k.startsWith("dk_") || k === "dk_apiKey" || k === "dk_lang" || typeof v !== "string") return; // dk_lang: şu anki dil korunur
       try { JSON.parse(v); localStorage.setItem(k, v); n++; } catch { } // bozuk değeri alma
     });
     conv = store.get("conv", []).filter(c => c && c.at && Date.now() - c.at < 20 * 60000);
     App.interp.ctx = store.get("ctx", "is");
     applyTheme(); applyFontScale(); App.renderStats(); renderBen();
+    // v8.2 (QA): yedekteki dil kalıcı olsun — başka dildeysek (ya da bu sekme geçici dildeyse) o dilde yeniden aç
+    let bkLang = null; try { const v = JSON.parse(j.data.dk_lang || "null"); if (LANGS[v]) bkLang = v; } catch { }
+    if (bkLang && (bkLang !== LANG || window.LANG_TEMP)) {
+      toast(`Yedek yüklendi ✅ (${n} kayıt) — yedekteki dil ${LANGS[bkLang].flag} ${LANGS[bkLang].ad}; uygulama o dilde açılıyor…`);
+      setTimeout(() => switchLang(bkLang, "ben"), 1800); return;
+    }
+    if (bkLang) store.set("lang", bkLang);
     toast(`Yedek yüklendi ✅ (${n} kayıt)`);
   } catch { toast("Bu dosya geçerli bir yedek değil"); }
   finally { e.target.value = ""; }
@@ -1401,17 +1779,18 @@ function renderOnb() {
   const steps = [
     onbAskLang() ? ["lang", `<div class="em" aria-hidden="true">🌍</div><h2 style="margin:0">Hangi dili öğrenmek istiyorsun?</h2>
      <p class="small muted" style="margin:0">Sonra Ben sekmesinden değiştirebilirsin; her dilin ilerlemesi ayrı saklanır.</p>
-     ${Object.values(LANGS).map(x => `<button class="btn block ${x.code === LANG ? "primary" : ""}" style="font-size:1.15rem;min-height:64px" data-act="onbLang" data-l="${x.code}">${x.flag} ${esc(x.ad)}</button>`).join("")}`] : null,
+     ${Object.values(LANGS).map(x => `<button class="btn block" style="font-size:1.15rem;min-height:64px" data-act="onbLang" data-l="${x.code}">${x.flag} ${esc(x.ad)}</button>`).join("")}`] : null,
     ["hello", `<div class="em" aria-hidden="true">🇹🇷 🌉 ${L.flag}</div><h2 style="font-size:1.5rem;margin:0">Dil Köprüsü'ne hoş geldin</h2>
-     <div class="card flat"><b>🎧 Yanında konuşulanı anla</b><br><span class="small">${nl ? "İş arkadaşların konuşurken Türkçe altyazı gibi okursun; sana bir iş söylenince satır 🔔 sarı yanar." : "Toplantıda, telefonda ya da yanında konuşulan İngilizceyi Türkçe altyazı gibi okursun; seninle ilgili bir şey söylenince satır 🔔 sarı yanar."}</span></div>
+     <div class="card flat"><b>🎧 Yanında konuşulanı anla</b><br><span class="small">${nl ? "İş arkadaşların konuşurken Türkçe altyazı gibi okursun; sana bir iş söylenince satır 🔔 sarı yanar." : "Toplantıda ya da yanında konuşulan İngilizceyi Türkçe altyazı gibi okursun; seninle ilgili bir şey söylenince satır 🔔 sarı yanar.<br><b>Görüşmeyi bilgisayarda hoparlörden aç, telefonu yanına koy.</b> Telefon görüşmesi sırasında mikrofon kullanılamaz."}</span></div>
      <div class="card flat"><b>🗣️ Karşındakine söyle</b><br><span class="small">Türkçe söyle, ${L.ad}sini okunuşuyla al ya da büyük ekranda göster.</span></div>
      <div class="card flat"><b>📚 Günde 10 dakika</b><br><span class="small">İş cümleleri ve temel ${L.ad}, adım adım.</span></div>`],
     ["me", `<div class="em" aria-hidden="true">🙋</div><h2 style="margin:0">Biraz seni tanıyayım</h2><p class="small muted" style="margin:0">Sadece bu telefonda kalır.</p>
      <label class="f" for="o_name">Adın</label><input type="text" id="o_name" value="${esc(p.name)}" placeholder="ör. ${esc(L.defaultName)}">
      <label class="f" for="o_alias">${nl ? "İş yerinde sana nasıl sesleniyorlar?" : "Sana nasıl sesleniyorlar?"}</label><input type="text" id="o_alias" value="${esc(p.aliases || "")}" placeholder="${nl ? "ör. Oz, Oguz" : "ör. Umit, Oomit"}">
-     <label class="f" for="o_job">İşin</label><input type="text" id="o_job" value="${esc(p.job)}"${nl ? "" : ` placeholder="ör. kimya satış / iş geliştirme"`}>
+     ${nl ? `<label class="f" for="o_job">İşin</label><input type="text" id="o_job" value="${esc(p.job)}">` : ""}
      <label class="f" for="o_level">${L.ad}n</label><select id="o_level">${[["A1", "Hiç / çok az biliyorum"], ["A2", "Basit konuşabiliyorum"], ["B1", "Günlük işleri halledebiliyorum"], ["B2", "Rahat konuşuyorum"]].map(([v, l]) => `<option value="${v}" ${p.level === v ? "selected" : ""}>${l}</option>`).join("")}</select>
-     <label class="f">Günlük hedef</label><div class="chips" role="group">${[[5, "5 dk"], [10, "10 dk"], [20, "20 dk"]].map(([v, l]) => `<button class="chip" data-act="onbGoal" data-v="${v}" aria-pressed="${+p.goal === v}">${l}</button>`).join("")}</div>`],
+     ${nl ? `<label class="f">Günlük hedef</label><div class="chips" role="group">${[[5, "5 dk"], [10, "10 dk"], [20, "20 dk"]].map(([v, l]) => `<button class="chip" data-act="onbGoal" data-v="${v}" aria-pressed="${+p.goal === v}">${l}</button>`).join("")}</div>`
+       : `<p class="small muted" style="margin:6px 0 0">İşini ve günlük hedefini (şimdilik ${+p.goal || 10} dk) sonra <b>Ben</b> sekmesinden değiştirebilirsin.</p>`}`],
     ["mic", `<div class="em" aria-hidden="true">🎤🔊</div><h2 style="margin:0">Mikrofon ve ses</h2>
      <p class="small">Telefon bir kez mikrofon izni soracak — <b>İzin ver</b>'e bas. Uygulama sesi kaydetmez.</p>
      ${IN_APP_BROWSER ? `<div class="dangerbox">Bu link bir uygulamanın içinde açılmış. Mikrofon için Chrome (Android) ya da Safari'de (iPhone) aç.</div>` : ""}
@@ -1436,12 +1815,12 @@ function renderOnb() {
   $("#onb").innerHTML = `<div class="step">${steps[onbStep][1]}</div>
     <div class="dots" aria-hidden="true">${steps.map((_, i) => `<i class="${i === onbStep ? "on" : ""}"></i>`).join("")}</div>
     <div class="row" style="max-width:520px;margin:0 auto;width:100%">
-      ${onbStep > 0 ? `<button class="btn ghost" data-act="onbPrev">← Geri</button>` : `<button class="btn ghost" data-act="onbSkip">Atla</button>`}
-      ${last ? "" : `<button class="btn primary grow" data-act="onbNext">Devam →</button>`}</div>`;
+      ${onbStep > 0 ? `<button class="btn ghost" data-act="onbPrev">← Geri</button>` : onbIds[0] === "lang" ? "" : `<button class="btn ghost" data-act="onbSkip">Atla</button>`}
+      ${last ? "" : onbIds[onbStep] === "lang" ? `<button class="btn primary grow" disabled aria-disabled="true" title="Önce bir dil seç">Devam →</button>` : `<button class="btn primary grow" data-act="onbNext">Devam →</button>`}</div>`;
 }
 function onbSaveStep() {
   const id = onbIds[onbStep];
-  if (id === "me" && $("#o_name")) { const p = profile(); p.name = $("#o_name").value.trim(); p.aliases = $("#o_alias").value.trim(); p.job = $("#o_job").value.trim(); p.level = $("#o_level").value; store.set("profile", p); }
+  if (id === "me" && $("#o_name")) { const p = profile(); p.name = $("#o_name").value.trim(); p.aliases = $("#o_alias").value.trim(); if ($("#o_job")) p.job = $("#o_job").value.trim(); p.level = $("#o_level").value; store.set("profile", p); }
   if (id === "key" && $("#o_key")) { const k = ($("#o_key").value || "").trim(); if (/^sk-ant-/.test(k)) store.set("apiKey", k); }
 }
 /** Tanıtımın dil adımı: İngilizce → kaydet ve İngilizce tanıtımla yeniden aç; Felemenkçe → devam */
@@ -1470,3 +1849,17 @@ function onbFinish(to) {
   else tab("ogren");
 }
 
+
+/* ---------------- C8: geçici dil şeridi (?lang=xx başka dili kullanan cihazda açıldıysa) ---------------- */
+(function langTempBar() {
+  if (!window.LANG_TEMP) return;
+  const other = LANG === "en" ? "nl" : "en";
+  const bar = document.createElement("div"); bar.className = "langtmp"; bar.setAttribute("role", "status");
+  // v8.3 (en): 375 px'te tek satır metin + altta yan yana iki kısa düğme (şerit ≤ ~100 px)
+  bar.innerHTML = LANG === "en"
+    ? `<span class="grow">Bu sekmede ${L.flag} <b>${esc(L.ad)}</b> açık</span><button class="btn sm primary" data-act="langTmpKeep" title="Hep ${esc(L.ad)} kullan">Kalıcı yap</button><button class="btn sm" data-act="langTmpBack" data-l="${other}" title="${esc(LANGS[other].ad)}ye dön">${LANGS[other].flag} Geri dön</button>`
+    : `<span class="grow">Bu sekmede ${L.flag} <b>${esc(L.ad)}</b> açık</span><button class="btn sm primary" data-act="langTmpKeep">Hep ${esc(L.ad)}</button><button class="btn sm" data-act="langTmpBack" data-l="${other}">${LANGS[other].flag} ${esc(LANGS[other].ad)}ye dön</button>`;
+  const main = document.querySelector("main"); if (main && main.parentNode) main.parentNode.insertBefore(bar, main);
+})();
+ACT.langTmpKeep = () => switchLang(LANG, App.view || "ben");
+ACT.langTmpBack = el => switchLang(el.dataset.l, App.view || "ben");

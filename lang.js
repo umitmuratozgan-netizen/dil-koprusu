@@ -20,24 +20,47 @@ const LANGS = {
   en: {
     code: "en", ad: "İngilizce", flag: "🇬🇧", flagAlt: "🇺🇸",
     sr: "en-US", srAlt: "en-GB", srOpts: [["en-US", "Amerikan (en-US)"], ["en-GB", "İngiliz (en-GB)"], ["en-IN", "Hint (en-IN)"]], srAltAd: "İngiliz İngilizcesi",
-    ttsPref: ["en-GB", "en-US", "en"], ttsBase: "en",
+    ttsPref: ["en-US", "en-GB", "en"], ttsBase: "en", // okunuşlar Amerikan: ses de önce en-US
     ai: "English", aiVariety: "clear international English (neutral, easy for non-native partners)", aiStd: "standard English",
     ulke: "", hello: "Good morning", helloTr: "Günaydın",
     defaultName: "Ümit",
     belgium: false,
-    ctxs: [["is", "💼 İş görüşmesi"], ["toplanti", "🖥️ Toplantı"], ["genel", "💬 Günlük"], ["seyahat", "✈️ Seyahat"], ["doktor", "🩺 Doktor"], ["resmi", "🏛️ Resmî"]],
+    ctxs: [["is", "💼 İş"], ["toplanti", "🖥️ Toplantı"], ["genel", "💬 Günlük"], ["seyahat", "✈️ Seyahat"], ["doktor", "🩺 Doktor"], ["resmi", "🏛️ Resmî"]],
     serious: ["doktor", "resmi"]
   }
 };
+/* ?lang=xx: cihaz tamamen yeniyse kalıcı yazılır. Cihazda zaten kullanım varsa (ör. kardeş linke
+   yanlışlıkla dokundu) yalnız bu sekme için geçerli olur; arayüz "kalıcı yap / geri dön" şeridi gösterir. */
+let LANG_TEMP = false;
 const LANG = (() => {
   let v = null;
   try {
     const q = new URLSearchParams(location.search).get("lang");
-    if (q === "en" || q === "nl") { localStorage.setItem("dk_lang", JSON.stringify(q)); v = q; }
-    else v = JSON.parse(localStorage.getItem("dk_lang") || "null");
+    // v8.3: bozuk dk_lang JSON'u tüm bloğu atlatmasın (?lang yine işlesin). Bozuk değer = "kullanılmış cihaz", eskisi gibi nl.
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem("dk_lang") || "null"); } catch { saved = "nl"; }
+    const used = saved !== null || localStorage.getItem("dk_onb") !== null || localStorage.getItem("dk_en_onb") !== null;
+    if (q === "en" || q === "nl") {
+      if (!used) { localStorage.setItem("dk_lang", JSON.stringify(q)); saved = q; sessionStorage.removeItem("dk_lang_tmp"); }
+      else if (q === (saved || "nl")) sessionStorage.removeItem("dk_lang_tmp");
+      else sessionStorage.setItem("dk_lang_tmp", q);
+    }
+    const tmp = sessionStorage.getItem("dk_lang_tmp");
+    if (tmp === "en" || tmp === "nl") { v = tmp; LANG_TEMP = true; }
+    else v = saved;
   } catch { }
   return v === "en" ? "en" : "nl";
 })();
+/** Geçici dili (ya da başka bir dili) kalıcı yapar ve uygulamayı o dilde yeniden açar.
+    extraQS (v8.3, isteğe bağlı): korunacak diğer adres parametreleri (ör. "mode=live") — lang/tab yine buradan yazılır. */
+function setLangPermanent(code, tab = "ben", extraQS = "") {
+  const c = code === "en" ? "en" : "nl";
+  try { localStorage.setItem("dk_lang", JSON.stringify(c)); sessionStorage.removeItem("dk_lang_tmp"); } catch { }
+  let extra = "";
+  try { const q = new URLSearchParams(extraQS || ""); q.delete("lang"); q.delete("tab"); extra = q.toString(); } catch { }
+  location.replace(location.pathname + "?tab=" + encodeURIComponent(tab) + (extra ? "&" + extra : ""));
+}
+window.LANG_TEMP = LANG_TEMP; window.setLangPermanent = setLangPermanent;
 const L = LANGS[LANG];
 window.LANG = LANG; window.L = L; window.LANGS = LANGS;
 if (LANG === "en" && window.EN) Object.assign(window, window.EN);

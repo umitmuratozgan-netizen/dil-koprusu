@@ -179,12 +179,12 @@
     const st = store.get("pairStats", {});
     const tileBtn = (act, e, n, d, extra = "") => `<button class="tile" data-act="${act}" ${extra}><div class="e">${e}</div><div class="n">${n}</div><div class="small muted">${d}</div></button>`;
     return `<div class="card"><h2 style="margin:0 0 2px">🎧 Kulak eğitimi</h2>
-      <div class="small muted">${L.belgium ? "İş yerinde yanında konuşulanı anlamak için" : "Toplantıda ve telefonda konuşulanı anlamak için"}: önce soruyu oku, sonra dinle.</div>
+      <div class="small muted">${L.belgium ? "İş yerinde yanında konuşulanı anlamak için" : "Toplantıda ve görüşmelerde konuşulanı anlamak için"}: önce soruyu oku, sonra dinle.</div>
       <div style="margin-top:8px">${speedChips()}</div>
       <div class="grid2" style="margin-top:6px">
         ${ds.length ? tileBtn("lsStartDlg", "🗣️", "Kulak misafiri", `${ds.length} ${L.belgium ? "iş diyaloğu" : "diyalog"} · ${nDone} anlaşıldı`) : ""}
         ${gs.length ? tileBtn("lsStartPair", "👂", "Ses çiftleri", L.belgium ? "ui/eu, a/aa, g/h…" : esc(gs.slice(0, 3).map(g => g.sound || g.id).join(", ")) + "…") : ""}
-        ${tileBtn("lsStartHeard", "🏪", "İşte duyduklarım", heard.length ? `${heard.length} cümle · dinle + yaz` : "Canlı altyazıda ➕ ile biriktir")}
+        ${tileBtn("lsStartHeard", L.belgium ? "🏪" : "🗂️", L.belgium ? "İşte duyduklarım" : "Duyduklarım", heard.length ? `${heard.length} cümle · dinle + yaz` : "Canlı altyazıda ➕ ile biriktir")}
       </div>
       ${gs.length ? `<details style="margin-top:8px"><summary class="small">Belirli bir sesi çalış</summary><div class="chips" style="margin-top:6px;flex-wrap:wrap">${gs.map(g => { const x = st[g.id]; return `<button class="chip" data-act="lsStartPair" data-g="${esc(g.id)}">${esc(g.sound || g.id)}${x && x.n ? ` · %${Math.round(100 * x.ok / x.n)}` : ""}</button>`; }).join("")}</div></details>` : ""}
     </div>`;
